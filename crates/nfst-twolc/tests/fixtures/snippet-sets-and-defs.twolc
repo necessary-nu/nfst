@@ -1,0 +1,13 @@
+Alphabet a b c d e ;
+
+Sets
+  Vowel = a e ;
+  Cons  = b c d ;
+
+Definitions
+  AnyVowel = Vowel:Vowel ;
+
+Rules
+
+"using defs"
+a:b <=> AnyVowel _ ;

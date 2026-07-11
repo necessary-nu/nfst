@@ -1,0 +1,2 @@
+DefIns greeting [{hello} | {hi}];
+Define TOP Ins(greeting) EndTag(G);

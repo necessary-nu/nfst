@@ -1,0 +1,12 @@
+[package]
+name = "nfst-pmatch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Parser and AST for the pmatch pattern-matching language; reuses nfst-xre operator enums"
+
+[dependencies]
+nfst-syntax.workspace = true
+nfst-xre.workspace = true
+smol_str.workspace = true

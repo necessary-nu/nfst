@@ -1,0 +1,7 @@
+! Stack manipulation primitives.
+regex a ;
+regex b ;
+turn
+rotate
+pop
+clear

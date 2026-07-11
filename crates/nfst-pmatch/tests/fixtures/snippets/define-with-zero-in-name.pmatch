@@ -1,0 +1,3 @@
+set need-separators off
+Define T0 [Alpha+ EndTag(A)];
+Define TOP T0;

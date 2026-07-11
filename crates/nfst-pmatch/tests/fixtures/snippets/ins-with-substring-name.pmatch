@@ -1,0 +1,2 @@
+Define name [ Alpha+ ] EndTag(A);
+Define TOP [ Ins(name) ];

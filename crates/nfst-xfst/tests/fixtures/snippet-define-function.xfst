@@ -1,0 +1,5 @@
+! `define NAME(args) BODY ;` — function-form definition.
+define Concat(x, y) x y ;
+define Two(a) a a ;
+regex Concat(a, b) Two(c) ;
+print net

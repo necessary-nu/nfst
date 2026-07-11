@@ -1,0 +1,2 @@
+Define vowels Lst({a} | {e} | {i} | {o} | {u});
+Define TOP vowels EndTag(V);

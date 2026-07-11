@@ -1,0 +1,11 @@
+[package]
+name = "nfst-xfst"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Parser and AST for the xfst command-shell language; embeds nfst-xre for inline regex bodies"
+
+[dependencies]
+nfst-syntax.workspace = true
+nfst-xre.workspace = true

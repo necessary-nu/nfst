@@ -1,0 +1,7 @@
+! `apply up` heredoc form — body terminated by `<ctrl-d>`.
+regex a:b | c:d ;
+apply up
+ab
+cd
+<ctrl-d>
+quit

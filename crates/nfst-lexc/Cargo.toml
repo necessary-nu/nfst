@@ -1,0 +1,13 @@
+[package]
+name = "nfst-lexc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Parser and AST for the lexc lexicon-compiler language; embeds nfst-xre for regex bodies"
+
+[dependencies]
+nfst-syntax.workspace = true
+nfst-xre.workspace = true
+logos.workspace = true
+smol_str.workspace = true

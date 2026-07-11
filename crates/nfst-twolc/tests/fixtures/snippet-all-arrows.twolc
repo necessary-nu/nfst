@@ -1,0 +1,15 @@
+Alphabet a b c d ;
+
+Rules
+
+"right arrow"
+a:b => _ ;
+
+"left arrow"
+a:b <= _ ;
+
+"left right arrow"
+a:b <=> _ ;
+
+"left restriction"
+a:b /<= _ ;

@@ -1,0 +1,6 @@
+! All three substitute forms.
+regex a b:c d ;
+substitute symbol X for a
+substitute label X:Y for b:c
+define Foo a:b ;
+substitute defined Foo for a

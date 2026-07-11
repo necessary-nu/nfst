@@ -1,0 +1,7 @@
+Alphabet a b c d ;
+
+Rules
+
+"multiple contexts"
+a:b <=> _ c ;
+        d _ ;

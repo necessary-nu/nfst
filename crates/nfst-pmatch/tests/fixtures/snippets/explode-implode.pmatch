@@ -1,0 +1,1 @@
+Define TOP Explode({hello}, {world}) | Implode({h}, {e}, {l}, {l}, {o});

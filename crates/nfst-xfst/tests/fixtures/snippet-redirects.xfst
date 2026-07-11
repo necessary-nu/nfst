@@ -1,0 +1,5 @@
+! `> path` and `< path` I/O redirection.
+regex a:b ;
+print net > out.txt
+write att > out.att
+load < in.hfst

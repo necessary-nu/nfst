@@ -1,0 +1,8 @@
+! Test commands.
+regex a ;
+test null
+test functional
+test identity
+test equivalent
+test sublanguage
+test infinitely-ambiguous

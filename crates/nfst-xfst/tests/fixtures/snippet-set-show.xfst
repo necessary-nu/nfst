@@ -1,0 +1,5 @@
+! `set` and `show` variables.
+set quit-on-fail ON
+set print-pairs ON
+show quit-on-fail
+show variables

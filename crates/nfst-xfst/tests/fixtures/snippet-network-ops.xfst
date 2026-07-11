@@ -1,0 +1,8 @@
+! Unary and binary network operations.
+regex a ;
+regex b ;
+compose net
+invert net
+minimize net
+determinize net
+reverse net

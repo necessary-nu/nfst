@@ -1,0 +1,2 @@
+set need-separators off
+Define TOP {a} RC({b}) EndTag(AB);

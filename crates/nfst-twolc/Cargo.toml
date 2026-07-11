@@ -1,0 +1,12 @@
+[package]
+name = "nfst-twolc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Parser and AST for the twolc two-level morphology language; reuses nfst-xre operator enums"
+
+[dependencies]
+nfst-syntax.workspace = true
+nfst-xre.workspace = true
+smol_str.workspace = true

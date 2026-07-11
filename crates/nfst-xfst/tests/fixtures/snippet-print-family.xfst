@@ -1,0 +1,13 @@
+! A spread of `print` variants.
+regex a b c ;
+print net
+print stack
+print sigma
+print labels
+print size
+print longest-string
+print shortest-string
+print words 5
+print upper-words 3
+print lower-words 3
+print random-words 10

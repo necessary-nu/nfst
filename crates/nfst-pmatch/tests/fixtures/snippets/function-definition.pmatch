@@ -1,0 +1,2 @@
+Define MyTag(name, body) [body EndTag(name)];
+Define TOP MyTag(W, Alpha+);

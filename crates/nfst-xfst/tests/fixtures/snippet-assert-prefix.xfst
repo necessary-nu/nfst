@@ -1,0 +1,4 @@
+! `assert <command>` — fails the script when the inner predicate fails.
+regex a ;
+assert test null
+assert test functional

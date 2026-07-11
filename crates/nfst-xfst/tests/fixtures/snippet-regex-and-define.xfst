@@ -1,0 +1,4 @@
+! `regex` and `define NAME E ;` — both forms embed xre.
+define Vowel a | e | i | o | u ;
+regex [Vowel | b]+ ;
+write att

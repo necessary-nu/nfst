@@ -1,0 +1,22 @@
+set precision 1
+set print-weight ON
+
+regex [a::1]+ @-> x::1 || a _ a ;
+
+apply down aaaa
+# axa
+apply down aaaaabaaaa
+# axabaxa
+apply down aaaaabaaaacaaaa
+# axabaxacaxa
+
+echo --
+
+regex [a::1]+ @> x::1 || a _ a ;
+
+apply down aaaa
+# axabaxa
+apply down aaaaabaaaa
+# axxxabaxxa
+apply down aaaaabaaaacaaaa
+# axxxabaxxacaxxa

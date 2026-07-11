@@ -1,0 +1,8 @@
+Alphabet a b c ;
+
+Diacritics @P.Foo.Bar@ @D.Foo@ ;
+
+Rules
+
+"trivial"
+a:b <=> _ ;

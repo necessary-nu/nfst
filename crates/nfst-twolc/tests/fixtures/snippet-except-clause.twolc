@@ -1,0 +1,7 @@
+Alphabet a b c ;
+
+Rules
+
+"with except"
+a:b => c _ ;
+    except b _ ;

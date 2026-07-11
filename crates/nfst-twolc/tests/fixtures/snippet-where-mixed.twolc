@@ -1,0 +1,7 @@
+Alphabet a b c d ;
+
+Rules
+
+"mixed variables"
+X:Y <=> _ ;
+    where X in (a b) Y in (c d) mixed ;

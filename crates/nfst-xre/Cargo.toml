@@ -1,0 +1,14 @@
+[package]
+name = "nfst-xre"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Parser and AST for the Xerox regular-expression sublanguage (xre)"
+
+[dependencies]
+nfst-syntax.workspace = true
+ariadne.workspace = true
+chumsky.workspace = true
+logos.workspace = true
+smol_str.workspace = true

@@ -1,0 +1,7 @@
+Alphabet a b c d ;
+
+Rules
+
+"vowel harmony"
+V:Vy <=> _ ;
+    where V in (a c) and Vy in (b d) matched ;
