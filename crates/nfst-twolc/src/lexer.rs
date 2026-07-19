@@ -8,7 +8,7 @@
 
 use crate::token::Token;
 use nfst_syntax::Span;
-use smol_str::SmolStrBuilder;
+use smol_str::{SmolStr, SmolStrBuilder};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LexError {
@@ -314,6 +314,7 @@ impl<'a> Lexer<'a> {
     fn lex_symbol(&mut self) {
         let start = self.pos;
         let mut text = SmolStrBuilder::new();
+        let mut had_escape = false;
         let bytes = self.source.as_bytes();
         loop {
             if self.pos >= bytes.len() {
@@ -321,6 +322,7 @@ impl<'a> Lexer<'a> {
             }
             let b = bytes[self.pos];
             if b == b'%' {
+                had_escape = true;
                 self.pos += 1;
                 let rest = self.rest();
                 if let Some(c) = rest.chars().next() {
@@ -358,6 +360,25 @@ impl<'a> Lexer<'a> {
             self.advance_one_char();
             return;
         }
+        // Upstream htwolcpre1 renames the BARE special tokens into the
+        // `__HFST_TWOLC_` namespace at lex time: `0` is the two-level zero
+        // (epsilon placeholder), `#` the word boundary, `.#.` the absolute
+        // word boundary. Their `%`-escaped spellings stay ordinary literal
+        // symbols — that distinction only exists here, before the escape is
+        // stripped, so it must be encoded in the token. A consumer that
+        // treated a plain `0`/`#` symbol as the special would conflate the
+        // escaped literal with it (`%#` means the literal hash character,
+        // never the word boundary).
+        let text = if had_escape {
+            text
+        } else {
+            match text.as_str() {
+                "0" => SmolStr::new_static("__HFST_TWOLC_0"),
+                "#" => SmolStr::new_static("__HFST_TWOLC_#"),
+                ".#." => SmolStr::new_static("__HFST_TWOLC_.#."),
+                _ => text,
+            }
+        };
         self.emit(Token::Symbol(text), Span::anonymous(start..self.pos));
     }
 }
@@ -503,17 +524,37 @@ mod tests {
 
     #[test]
     fn pair_with_zero_for_epsilon() {
-        // `e:0` — `0` is just a Symbol containing "0".
+        // `e:0` — bare `0` is the two-level zero, renamed into the
+        // `__HFST_TWOLC_` namespace like upstream htwolcpre1 does.
         let toks = lex("e:0");
         assert_eq!(toks[0], Token::Symbol("e".into()));
         assert_eq!(toks[1], Token::Colon);
+        assert_eq!(toks[2], Token::Symbol("__HFST_TWOLC_0".into()));
+    }
+
+    #[test]
+    fn escaped_zero_is_a_literal() {
+        // `%0` is the literal zero CHARACTER, not the two-level zero — the
+        // escape is what carries that distinction, so it must not get the
+        // marker rename.
+        let toks = lex("e:%0");
         assert_eq!(toks[2], Token::Symbol("0".into()));
     }
 
     #[test]
     fn symbol_with_dot() {
         let toks = lex(".#.");
-        assert_eq!(toks[0], Token::Symbol(".#.".into()));
+        assert_eq!(toks[0], Token::Symbol("__HFST_TWOLC_.#.".into()));
+    }
+
+    #[test]
+    fn bare_hash_is_the_word_boundary() {
+        // Bare `#` is the (relative) word boundary; `%#` is the literal hash
+        // symbol; `#7`-style multichar names are untouched.
+        let toks = lex("# %# #7");
+        assert_eq!(toks[0], Token::Symbol("__HFST_TWOLC_#".into()));
+        assert_eq!(toks[1], Token::Symbol("#".into()));
+        assert_eq!(toks[2], Token::Symbol("#7".into()));
     }
 
     #[test]

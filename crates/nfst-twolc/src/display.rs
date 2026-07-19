@@ -296,7 +296,21 @@ fn is_atomic(e: &TwolcRegex) -> bool {
 }
 
 /// Escape any character special in twolc's lexer by prefixing with `%`.
+///
+/// The lexer renames the BARE special tokens (`0`, `#`, `.#.`) into the
+/// `__HFST_TWOLC_` namespace and strips `%`-escapes, so printing must invert
+/// both directions for the round-trip to hold: a marker prints as its bare
+/// spelling, and a plain symbol that WOULD lex into a marker prints escaped.
 fn escape_symbol(s: &str) -> SmolStr {
+    match s {
+        "__HFST_TWOLC_0" => return SmolStr::new_static("0"),
+        "__HFST_TWOLC_#" => return SmolStr::new_static("#"),
+        "__HFST_TWOLC_.#." => return SmolStr::new_static(".#."),
+        "0" => return SmolStr::new_static("%0"),
+        "#" => return SmolStr::new_static("%#"),
+        ".#." => return SmolStr::new_static(".%#."),
+        _ => {}
+    }
     let mut out = SmolStrBuilder::new();
     for c in s.chars() {
         if needs_escape(c) {
