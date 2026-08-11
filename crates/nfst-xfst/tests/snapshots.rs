@@ -50,6 +50,37 @@ fn define_records_name_and_body() {
     }
 }
 
+// A prototype's `(` must be ADJACENT to the name — C++ lexes the whole thing
+// as a single token, `{NAMETOKEN}"("...`. With a space between them it is a
+// plain net definition whose body merely opens with a parenthesised (that is,
+// optional) expression.
+//
+// Treating `define A (r) g -> [k k] ;` as a function yielded an empty
+// transducer at every reference. In Giella lang-kal such a rule sat in a
+// ~50-rule `.o.` chain, so one empty member annihilated the composition and
+// the language's analyser came out with 1 state and 0 arcs — while the build
+// still reported success.
+#[test]
+fn parenthesised_optional_after_a_space_is_a_net_not_a_function() {
+    let cmds = parsed("define A (r) g -> [ k k ] ;");
+    assert!(
+        matches!(&cmds[0], XfstCommand::Define { name, .. } if name == "A"),
+        "expected a net Define, got {:?}",
+        cmds[0]
+    );
+}
+
+#[test]
+fn prototype_adjacent_to_the_name_is_still_a_function() {
+    let cmds = parsed("define A(r) g -> [ k k ] ;");
+    if let XfstCommand::DefineFunction { name, params, .. } = &cmds[0] {
+        assert_eq!(name, "A");
+        assert_eq!(params, &vec!["r".to_string()]);
+    } else {
+        panic!("expected DefineFunction, got {:?}", cmds[0]);
+    }
+}
+
 #[test]
 fn define_function_records_params() {
     let cmds = parsed("define Concat(x, y) x y ;");

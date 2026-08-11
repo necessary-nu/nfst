@@ -164,7 +164,16 @@ impl<'a> Lexer<'a> {
                     let name_start = self.pos;
                     let name = self.read_nametoken();
                     let name_end = self.pos;
-                    self.skip_horizontal_ws();
+                    // The `(` must be ADJACENT to the name. C++ lexes a
+                    // prototype as one token, `{NAMETOKEN}"("...`, so
+                    // whitespace between them means this is an ordinary net
+                    // definition whose body merely opens with a parenthesised
+                    // (optional) expression:
+                    //   define A(r) g -> [k k] ;   function A, parameter r
+                    //   define A (r) g -> [k k] ;  net, body `(r) g -> [k k]`
+                    // Skipping whitespace before this check turned every rule
+                    // of the second shape into a function, so referencing it
+                    // yielded an empty transducer.
                     let mut effective = kind;
                     let mut proto: Option<(String, usize, usize)> = None;
                     if self.pos < self.src.len() && self.src[self.pos] == b'(' {
@@ -174,6 +183,7 @@ impl<'a> Lexer<'a> {
                             effective = CommandKind::DefineFunction;
                         }
                     }
+                    self.skip_horizontal_ws();
                     self.push(Token::Command(effective), start);
                     if !name.is_empty() {
                         self.tokens
