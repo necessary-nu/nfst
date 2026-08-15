@@ -368,3 +368,141 @@ fn span_on_top_statement() {
     let f = parse("Define TOP a;").unwrap();
     assert!(f.value.statements[0].span.start() < f.value.statements[0].span.end());
 }
+
+// ─────────────────── juxtaposition associativity ───────────────────
+// `EXPRESSION7: EXPRESSION7 EXPRESSION7` is ambiguous and bison shifts, so
+// juxtaposition chains nest to the right. Concatenation is associative, so
+// only tree-shape analyses can observe this — but they do.
+
+/// Flatten a right-nested concatenation chain into its operands.
+fn concat_chain(e: &PmatchExpr) -> Vec<&PmatchExpr> {
+    let mut out = Vec::new();
+    let mut cur = e;
+    while let PmatchExpr::Binary(BinaryOp::Concatenate, l, r) = cur {
+        out.push(&l.value);
+        cur = &r.value;
+    }
+    out.push(cur);
+    out
+}
+
+fn symbol_name(e: &PmatchExpr) -> &str {
+    match e {
+        PmatchExpr::Symbol(s) => s.as_str(),
+        other => panic!("expected Symbol, got {other:?}"),
+    }
+}
+
+fn chain_names(e: &PmatchExpr) -> Vec<&str> {
+    concat_chain(e).into_iter().map(symbol_name).collect()
+}
+
+#[test]
+fn juxtaposition_nests_right() {
+    let f = parsed("Define TOP a b c;");
+    let PmatchExpr::Binary(BinaryOp::Concatenate, a, rest) = body(&f) else {
+        panic!("expected top-level Concatenate, got {:?}", body(&f))
+    };
+    assert_eq!(symbol_name(&a.value), "a");
+    let PmatchExpr::Binary(BinaryOp::Concatenate, b, c) = &rest.value else {
+        panic!("expected a Concatenate on the right, got {:?}", rest.value)
+    };
+    assert_eq!(symbol_name(&b.value), "b");
+    assert_eq!(symbol_name(&c.value), "c");
+}
+
+#[test]
+fn juxtaposition_chain_nests_right_throughout() {
+    let f = parsed("Define TOP a b c d e;");
+    assert_eq!(chain_names(body(&f)), ["a", "b", "c", "d", "e"]);
+}
+
+#[test]
+fn juxtaposition_pair_is_unnested() {
+    let f = parsed("Define TOP a b;");
+    assert_eq!(chain_names(body(&f)), ["a", "b"]);
+}
+
+#[test]
+fn single_operand_builds_no_concatenation() {
+    let f = parsed("Define TOP a;");
+    assert!(matches!(body(&f), PmatchExpr::Symbol(s) if s == "a"));
+}
+
+#[test]
+fn left_context_is_the_left_child_of_the_chain() {
+    // The shape a left-concatenation-with-context check keys off: the context
+    // is the immediate left child of the top concatenation, not buried in a
+    // left-nested spine.
+    let f = parsed("Define TOP LC(x) a b;");
+    let PmatchExpr::Binary(BinaryOp::Concatenate, left, _) = body(&f) else {
+        panic!("expected top-level Concatenate, got {:?}", body(&f))
+    };
+    assert!(matches!(&left.value, PmatchExpr::Lc(_)));
+}
+
+#[test]
+fn juxtaposition_binds_tighter_than_union() {
+    let f = parsed("Define TOP a b | c d;");
+    let PmatchExpr::Binary(BinaryOp::Union, l, r) = body(&f) else {
+        panic!("expected Union at the root, got {:?}", body(&f))
+    };
+    assert_eq!(chain_names(&l.value), ["a", "b"]);
+    assert_eq!(chain_names(&r.value), ["c", "d"]);
+}
+
+#[test]
+fn ignoring_binds_tighter_than_juxtaposition() {
+    // expression8 is parsed per-operand, so `b / c` is one operand of the
+    // chain rather than the chain being an operand of `/`.
+    let f = parsed("Define TOP a b / c;");
+    let operands = concat_chain(body(&f));
+    assert_eq!(operands.len(), 2);
+    assert_eq!(symbol_name(operands[0]), "a");
+    assert!(matches!(
+        operands[1],
+        PmatchExpr::Binary(BinaryOp::Ignoring, _, _)
+    ));
+}
+
+#[test]
+fn postfix_stays_on_its_own_operand() {
+    let f = parsed("Define TOP a b* c;");
+    let operands = concat_chain(body(&f));
+    assert_eq!(operands.len(), 3);
+    assert!(matches!(operands[1], PmatchExpr::Unary(UnaryOp::Star, _)));
+}
+
+#[test]
+fn bracketing_still_forces_left_nesting() {
+    // Explicit brackets remain the way to left-nest a chain, and still parse.
+    let f = parsed("Define TOP [a b] c;");
+    let operands = concat_chain(body(&f));
+    assert_eq!(operands.len(), 2);
+    assert!(matches!(operands[0], PmatchExpr::Group(_)));
+    assert_eq!(symbol_name(operands[1]), "c");
+}
+
+#[test]
+fn chain_spans_cover_their_own_suffix() {
+    let f = parse("Define TOP a b c;").unwrap_or_else(|e| panic!("parse: {e:?}"));
+    let PmatchStatement::Define { body, .. } = &f.value.statements[0].value else {
+        panic!("expected Define")
+    };
+    let PmatchExpr::Binary(BinaryOp::Concatenate, _, rest) = &body.value else {
+        panic!("expected top-level Concatenate")
+    };
+    // The inner node starts at `b`, not at the head of the whole chain.
+    assert!(rest.span.start() > body.span.start());
+    assert_eq!(rest.span.end(), body.span.end());
+}
+
+#[test]
+fn long_chain_stays_right_nested() {
+    // The fold is applied after collecting operands rather than by recursing,
+    // so chain length costs the parser no stack. (Dropping the resulting AST
+    // still recurses — that is a property of the boxed tree, not the parser.)
+    let src = format!("Define TOP {};", vec!["a"; 10_000].join(" "));
+    let f = parsed(&src);
+    assert_eq!(concat_chain(body(&f)).len(), 10_000);
+}

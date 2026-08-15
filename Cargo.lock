@@ -183,7 +183,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "nfst-lexc"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "logos",
  "nfst-syntax",
@@ -193,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "nfst-pmatch"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "nfst-syntax",
  "nfst-xre",
@@ -202,11 +202,11 @@ dependencies = [
 
 [[package]]
 name = "nfst-syntax"
-version = "0.2.1"
+version = "0.3.0"
 
 [[package]]
 name = "nfst-twolc"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "nfst-syntax",
  "nfst-xre",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "nfst-xfst"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "nfst-syntax",
  "nfst-xre",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "nfst-xre"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "ariadne",
  "chumsky",

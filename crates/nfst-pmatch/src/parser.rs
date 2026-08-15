@@ -731,18 +731,33 @@ impl Parser {
     }
 
     // ───────────────────────── expression7 ─────────────────────────
-    // Concatenation by juxtaposition.
+    // Concatenation by juxtaposition. The grammar rule is ambiguous
+    // (`EXPRESSION7: EXPRESSION7 EXPRESSION7`) and bison resolves the
+    // shift/reduce conflict by shifting, so a chain nests to the right:
+    // `A B C` is Concat(A, Concat(B, C)). Analyses that inspect the left
+    // child of a concatenation — pmatch's context detection among them —
+    // depend on that shape.
     fn parse_expression7(&mut self) -> Result<SpannedExpr, Diagnostic> {
         let start = self.current_start();
-        let mut left = self.parse_expression8()?;
+        let first = self.parse_expression8()?;
+        if !self.peek_starts_atom() {
+            return Ok(first);
+        }
+        let mut operands = vec![(start, first)];
         while self.peek_starts_atom() {
-            let right = self.parse_expression8()?;
-            left = Self::spanned(
-                PmatchExpr::Binary(BinaryOp::Concatenate, Box::new(left), Box::new(right)),
-                self.merge(start),
+            let operand_start = self.current_start();
+            operands.push((operand_start, self.parse_expression8()?));
+        }
+        // Folded right after the fact rather than by recursing, so that a long
+        // juxtaposition chain costs no parser stack.
+        let (_, mut acc) = operands.pop().expect("chain has at least two operands");
+        while let Some((operand_start, left)) = operands.pop() {
+            acc = Self::spanned(
+                PmatchExpr::Binary(BinaryOp::Concatenate, Box::new(left), Box::new(acc)),
+                self.merge(operand_start),
             );
         }
-        Ok(left)
+        Ok(acc)
     }
 
     // ───────────────────────── expression8 ─────────────────────────

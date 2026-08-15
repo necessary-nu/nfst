@@ -10,14 +10,14 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/necessary-nu/nfst"
 
 [workspace.dependencies]
-nfst-syntax = { path = "crates/nfst-syntax", version = "0.2.1" }
-nfst-xre = { path = "crates/nfst-xre", version = "0.2.1" }
+nfst-syntax = { path = "crates/nfst-syntax", version = "0.3.0" }
+nfst-xre = { path = "crates/nfst-xre", version = "0.3.0" }
 ariadne = "0.5"
 chumsky = "0.10"
 logos = "0.15"
