@@ -19,6 +19,13 @@ and diagnostics.
 | `nfst-xfst` | `xfst` command scripts |
 | `nfst-pmatch` | `pmatch` pattern matching |
 
+## Versioning
+
+Each crate is versioned and released independently. The languages are
+separate, they track separate upstream grammars, and a fix to one of them
+says nothing about the others — so the version numbers are allowed to
+diverge rather than moving in lockstep.
+
 ## Status
 
 Complete and used in production as part of a port of HFST. Each language

@@ -9,8 +9,12 @@ members = [
     "crates/nfst-xfst",
 ]
 
+# Versions are deliberately NOT inherited. Each grammar crate tracks a
+# different upstream language and they are fixed and released independently,
+# so a lockstep version would either bump crates that did not change or hold
+# back one that did. Each crate sets its own `version` in its manifest; the
+# pins below have to be moved by hand when nfst-syntax or nfst-xre is bumped.
 [workspace.package]
-version = "0.3.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/necessary-nu/nfst"

@@ -206,7 +206,7 @@ version = "0.3.0"
 
 [[package]]
 name = "nfst-twolc"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "nfst-syntax",
  "nfst-xre",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "nfst-xfst"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "nfst-syntax",
  "nfst-xre",
