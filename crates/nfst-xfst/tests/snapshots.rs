@@ -2,12 +2,19 @@
 
 use nfst_xfst::{
     ApplyKind, NetworkOp, PrintCmd, ReadCmd, RedirectKind, SaveCmd, SubstituteCmd, TestKind,
-    XfstCommand, parse,
+    XfstCommand, parse, pretty_print,
 };
 
 fn parsed(src: &str) -> Vec<XfstCommand> {
     let f = parse(src).unwrap_or_else(|e| panic!("parse {src:?}: {e:?}"));
     f.value.commands.into_iter().map(|c| c.value).collect()
+}
+
+/// Pretty-printed form, for asserting that two spellings of the same script
+/// mean the same thing without comparing spans.
+fn printed(src: &str) -> String {
+    let f = parse(src).unwrap_or_else(|e| panic!("parse {src:?}: {e:?}"));
+    pretty_print(&f)
 }
 
 // ───────────────── trivial / structural ─────────────────
@@ -38,6 +45,84 @@ fn semicolons_are_optional_separators() {
 fn regex_command_embeds_xre() {
     let cmds = parsed("regex a:b ;");
     assert!(matches!(cmds[0], XfstCommand::Regex(_)));
+}
+
+// Regression: divvun/hfst-rs#2. Upstream enters an exclusive lexer state on
+// `regex` and that state spans newlines, so the body need not start on the
+// same line. We used to treat the newline as an empty body and then dispatch
+// the body's first token as a command — `unknown command '['`.
+#[test]
+fn regex_body_may_start_on_the_next_line() {
+    assert_eq!(
+        printed("regex\n[ Y | y ] (->) [ y e s ] ;\nsave stack yes.hfst\n"),
+        printed("regex [ Y | y ] (->) [ y e s ] ;\nsave stack yes.hfst\n"),
+    );
+}
+
+#[test]
+fn read_regex_body_may_start_on_the_next_line() {
+    assert_eq!(
+        printed("read regex\n[ a | b ] ;"),
+        printed("regex [ a | b ] ;")
+    );
+}
+
+#[test]
+fn regex_body_may_be_preceded_by_blank_and_comment_lines() {
+    // The comment stays in the body and the regex parser strips it.
+    assert_eq!(
+        printed("regex\n\n! pick a letter\n[ a | b ] ;"),
+        printed("regex [ a | b ] ;"),
+    );
+}
+
+#[test]
+fn define_function_body_may_start_on_the_next_line() {
+    // A prototype enters the same state upstream (xfst-lexer.ll:239).
+    let cmds = parsed("define Concat(x, y)\nx y ;");
+    if let XfstCommand::DefineFunction { name, params, .. } = &cmds[0] {
+        assert_eq!(name, "Concat");
+        assert_eq!(params, &vec!["x".to_string(), "y".to_string()]);
+    } else {
+        panic!("expected DefineFunction, got {:?}", cmds[0]);
+    }
+}
+
+// The counterpart the fix must NOT break: a bare `define NAME` at end of line
+// is upstream's empty declaration form (xfst-lexer.ll:234), defining from the
+// top of the stack. For it, a newline still ends the body.
+#[test]
+fn bare_define_at_end_of_line_does_not_swallow_the_next_command() {
+    let cmds = parsed("define Foo\nregex [ a ] ;");
+    assert_eq!(cmds.len(), 2);
+    assert!(
+        matches!(&cmds[0], XfstCommand::Define { name, .. } if name == "Foo"),
+        "expected a bodyless Define, got {:?}",
+        cmds[0]
+    );
+    assert!(matches!(cmds[1], XfstCommand::Regex(_)));
+}
+
+// A `;` inside a `!` comment is invisible to the regex parser upstream, so it
+// must not terminate the body here either.
+#[test]
+fn semicolon_inside_a_comment_does_not_end_the_regex() {
+    assert_eq!(
+        printed("regex a ! stop ; here\n| b ;"),
+        printed("regex a | b ;"),
+    );
+}
+
+// Why the comment handling above is `!`-only: `#` also opens a comment, but
+// only in token position — mid-token it is an ordinary symbol character.
+#[test]
+fn hash_inside_a_multichar_symbol_is_not_a_comment() {
+    // If `#` were treated as a comment start, it would swallow the `;` and
+    // the `pop` would be absorbed into the regex body.
+    let cmds = parsed("regex abc#def ;\npop ;");
+    assert_eq!(cmds.len(), 2);
+    assert!(matches!(cmds[0], XfstCommand::Regex(_)));
+    assert!(matches!(cmds[1], XfstCommand::Pop));
 }
 
 #[test]

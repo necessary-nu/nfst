@@ -401,15 +401,29 @@ impl Parser {
             ) {
                 break;
             }
-            // Otherwise: `name in ( v1 v2 … )`.
+            // Otherwise: `name in ( v1 v2 … )`, or the unparenthesised
+            // `name in v` form.
             let name = self.expect_symbol_string("variable name")?;
             self.expect(&Token::In, "`in`")?;
-            self.expect(&Token::LeftParenthesis, "`(`")?;
-            let mut values = Vec::new();
-            while !matches!(self.peek(), Some(Token::RightParenthesis)) {
-                values.push(self.expect_symbol_string("variable value")?);
-            }
-            self.expect(&Token::RightParenthesis, "`)`")?;
+            let values = if matches!(self.peek(), Some(Token::LeftParenthesis)) {
+                self.bump();
+                let mut values = Vec::new();
+                while !matches!(self.peek(), Some(Token::RightParenthesis)) {
+                    values.push(self.expect_symbol_string("variable value")?);
+                }
+                self.expect(&Token::RightParenthesis, "`)`")?;
+                values
+            } else {
+                // Upstream's second production, `VAR_SYMBOL IN VAR_SYMBOL`:
+                // exactly one symbol, in practice the name of a Set. Both
+                // productions funnel through the same `set_variable_values`,
+                // which expands set names and passes anything else through as
+                // a literal — so a bare name means the same as a one-element
+                // parenthesised list, and resolution stays downstream. Taking
+                // exactly one symbol is what keeps `in a b c` an error, as it
+                // is upstream.
+                vec![self.expect_symbol_string("variable value")?]
+            };
             assignments.push(VariableAssignment { name, values });
             // Block continues until `matched`/`mixed`/`freely` or `and`/EOL.
             if matches!(self.peek(), Some(Token::And)) || self.is_at_end() {
@@ -786,6 +800,61 @@ mod tests {
         assert_eq!(vars.len(), 2);
         assert_eq!(vars[0].matcher, VarMatcher::Freely); // implicit before `and`
         assert_eq!(vars[1].matcher, VarMatcher::Matched);
+    }
+
+    #[test]
+    fn where_clause_bare_set_name() {
+        // Upstream's `VAR_SYMBOL IN VAR_SYMBOL` production. The value is kept
+        // verbatim; expanding `Vowels` to its members is the consumer's job.
+        let f = parsed(
+            "Alphabet a b ;\nSets\nVowels = a e i o u y ;\n\
+             Rules\n\"r\" a:b <=> _ ;\nwhere V in Vowels matched ;\n",
+        );
+        let vars = f.rules[0].value.variables.as_ref().unwrap();
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].matcher, VarMatcher::Matched);
+        assert_eq!(vars[0].assignments.len(), 1);
+        assert_eq!(vars[0].assignments[0].name, "V");
+        assert_eq!(vars[0].assignments[0].values, ["Vowels"]);
+    }
+
+    #[test]
+    fn where_clause_bare_name_and_parenthesised_forms_mix() {
+        let f = parsed(
+            "Alphabet a b c d ;\nSets\nVowels = a e ;\n\
+             Rules\n\"r\" V:Vy <=> _ ;\nwhere V in Vowels and Vy in (b d) matched ;\n",
+        );
+        let vars = f.rules[0].value.variables.as_ref().unwrap();
+        assert_eq!(vars.len(), 2);
+        assert_eq!(vars[0].assignments[0].values, ["Vowels"]);
+        assert_eq!(vars[1].assignments[0].values, ["b", "d"]);
+    }
+
+    #[test]
+    fn where_clause_bare_name_and_paren_list_agree() {
+        let bare =
+            parsed("Alphabet a b ;\nRules\n\"r\" a:b <=> _ ;\nwhere V in Vowels matched ;\n");
+        let parens =
+            parsed("Alphabet a b ;\nRules\n\"r\" a:b <=> _ ;\nwhere V in ( Vowels ) matched ;\n");
+        assert_eq!(
+            bare.rules[0].value.variables,
+            parens.rules[0].value.variables
+        );
+    }
+
+    #[test]
+    fn where_clause_several_bare_assignments_in_one_block() {
+        // Each bare form takes exactly one symbol, so a second `name in value`
+        // simply starts the next assignment in the same block.
+        let f = parsed(
+            "Alphabet a b ;\nRules\n\"r\" a:b <=> _ ;\n\
+             where V in Vowels C in Cons matched ;\n",
+        );
+        let vars = f.rules[0].value.variables.as_ref().unwrap();
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].assignments.len(), 2);
+        assert_eq!(vars[0].assignments[0].values, ["Vowels"]);
+        assert_eq!(vars[0].assignments[1].values, ["Cons"]);
     }
 
     #[test]

@@ -73,6 +73,21 @@ fn lang_sme_phonology_uses_where_clauses() {
 }
 
 #[test]
+fn omorfi_hyphens_uses_an_unparenthesised_set_name() {
+    // Regression: divvun/hfst-rs#3. This generated grammar writes
+    // `where VOWEL in Vowels matched`, upstream's `VAR_SYMBOL IN VAR_SYMBOL`
+    // production, which we used to reject for want of a `(`.
+    let path = fixtures_dir().join("omorfi__src__generated__omorfi-hyphens.twolc");
+    let src = fs::read_to_string(&path).unwrap();
+    let f = parse(&src).unwrap_or_else(|e| panic!("parse: {e:?}"));
+    let vars = f.value.rules[0].value.variables.as_ref().unwrap();
+    assert_eq!(vars.len(), 1);
+    assert_eq!(vars[0].matcher, nfst_twolc::VarMatcher::Matched);
+    assert_eq!(vars[0].assignments[0].name, "VOWEL");
+    assert_eq!(vars[0].assignments[0].values, ["Vowels"]);
+}
+
+#[test]
 fn snippet_where_matched_records_matcher() {
     let path = fixtures_dir().join("snippet-where-matched.twolc");
     let src = fs::read_to_string(&path).unwrap();

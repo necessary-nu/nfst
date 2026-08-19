@@ -140,6 +140,17 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Whitespace including line breaks, but not comments — used where a
+    /// body may begin on a later line. Comments are left in place so they
+    /// reach the regex parser, which strips them itself.
+    fn skip_whitespace(&mut self) {
+        while self.pos < self.src.len()
+            && matches!(self.src[self.pos], b' ' | b'\t' | b'\n' | b'\r')
+        {
+            self.pos += 1;
+        }
+    }
+
     fn push(&mut self, t: Token, start: usize) {
         self.tokens.push((t, Span::anonymous(start..self.pos)));
     }
@@ -155,7 +166,7 @@ impl<'a> Lexer<'a> {
                 // regex bodies: capture until top-level `;`
                 CommandKind::ReadRegex => {
                     self.push(Token::Command(kind), start);
-                    self.read_regex_body();
+                    self.read_regex_body(kind);
                 }
                 CommandKind::DefineName | CommandKind::DefineFunction => {
                     // Read the name first, then peek for `(args)` — if
@@ -193,7 +204,7 @@ impl<'a> Lexer<'a> {
                         self.tokens
                             .push((Token::Prototype(p), Span::anonymous(ps..pe)));
                     }
-                    self.read_regex_body();
+                    self.read_regex_body(effective);
                 }
                 CommandKind::ApplyUp | CommandKind::ApplyDown | CommandKind::ApplyMed => {
                     // Heredoc form when nothing else follows on the same
@@ -364,11 +375,22 @@ impl<'a> Lexer<'a> {
     /// Capture a regex body up to (and not including) the next top-level
     /// `;`. The semicolon stays in the stream for the parser to consume.
     ///
-    /// If, after horizontal whitespace, the next character is a newline
-    /// or `;`, emit an empty body. This matches upstream's behavior for
-    /// `define NAME` declarations with no body.
-    fn read_regex_body(&mut self) {
-        self.skip_horizontal_ws();
+    /// Whether a newline may separate the command from its body depends on
+    /// the command. Upstream lexes bodies in an exclusive `REGEX_STATE` that
+    /// spans newlines, and enters it unconditionally for `regex` /
+    /// `read regex` (xfst-lexer.ll:496) and for a `define NAME(proto)`
+    /// prototype (:239). The one command that does *not* enter it is a bare
+    /// `define NAME` at end of line (:234) — that is upstream's empty
+    /// declaration form, which defines from the top of the stack, so for it a
+    /// newline still terminates.
+    ///
+    /// A `;` or end of input yields an empty body either way.
+    fn read_regex_body(&mut self, kind: CommandKind) {
+        if matches!(kind, CommandKind::ReadRegex | CommandKind::DefineFunction) {
+            self.skip_whitespace();
+        } else {
+            self.skip_horizontal_ws();
+        }
         // Empty body — declaration form like `define NAME` (EOL) or
         // `define NAME ;`.
         if self.pos >= self.src.len()
@@ -401,6 +423,19 @@ impl<'a> Lexer<'a> {
             if b == b'%' && self.pos + 1 < self.src.len() {
                 // Escaped char counts as part of the body.
                 self.pos += 2;
+                continue;
+            }
+            if b == b'!' {
+                // A `!` line comment runs to end of line, and a `;` inside one
+                // does not end the regex — upstream never sees it, because it
+                // hands the whole body to the regex parser, which skips
+                // comments. `#` opens a comment there too, but only in token
+                // position: `abc#def` is a single multichar symbol. Telling
+                // those apart needs a tokenizer, so `#` is left alone here —
+                // `!` can never be part of a symbol, escaped or not.
+                while self.pos < self.src.len() && self.src[self.pos] != b'\n' {
+                    self.pos += 1;
+                }
                 continue;
             }
             if b == b'"' {

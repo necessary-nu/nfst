@@ -49,6 +49,15 @@ fn rt_with_where_matched() {
 }
 
 #[test]
+fn rt_with_where_bare_set_name() {
+    // Prints back as `V in ( Vowels )`; the AST is what has to match.
+    round_trip(
+        "Alphabet a b ;\nSets\nVowels = a e ;\nRules\n\"r\" a:b <=> _ ;\n\
+         where V in Vowels matched ;",
+    );
+}
+
+#[test]
 fn rt_definitions_section() {
     round_trip("Alphabet a b ;\nDefinitions\nFoo = a b ;\nRules\n\"r\" a:b <=> _ ;");
 }

@@ -1,0 +1,42 @@
+
+! This automatically generated twolc data is originated from
+! omorfi database.
+! Copyright (c) 2018 Omorfi contributors
+
+! This program is free software: you can redistribute it and/or modify
+! it under the terms of the GNU General Public License as published by
+! the Free Software Foundation, version 3 of the License
+
+! This program is distributed in the hope that it will be useful,
+! but WITHOUT ANY WARRANTY; without even the implied warranty of
+! MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+! GNU General Public License for more details.
+
+! You should have received a copy of the GNU General Public License
+! along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+Alphabet
+%{hyph%?%}:0  ! boundary can be zero
+%{hyph%?%}:%- ! or (ASCII) hyphen
+%-
+%{WB%}
+%{wB%}
+%{STUB%}
+OMORFI%_VERSION%_≥%_15%_©%_GNU%_GPL%_V3
+%{DB%}
+%{MB%}
+%{XB%}
+;
+
+Sets
+Vowels = a e i o u y å ä ö á à â ã ā ă ą é è ê ë ē ĕ ę ė ě í ì î ï ĩ ī ĭ į ı ó ò ô ō ŏ ú ù û ü ũ ū ŭ ů ų ý ŷ ÿ ű æ ø œ ő ə A E I O U Y Å Ä Ö Á À Â Ã Ā Ă Ą É È Ê Ë Ē Ĕ Ę Ė Ě Í Ì Î Ï Ĩ Ī Ĭ Į İ Ó Ò Ô Ō Ŏ Ú Ù Û Ü Ũ Ū Ŭ Ů Ų Ý Ŷ Ű Æ Ø Œ Ő Ə ;! Vowels
+UpperOrSyms = A B C D E F G H I J K L M N O P Q R S Š T U V W X Y Z Ž Å Ä Ö Á À Â Ã Ā Ă Ą Ç Ć Ĉ Ċ Č Ð Ð Ď É È Ê Ë Ē Ĕ Ę Ė Ě Ƒ Ĝ Ğ Ġ Ģ Ȟ Ħ Í Ì Î Ï Ĩ Ī Ĭ Į İ Ĳ Ĵ Ķ ĸ Ĺ Ļ Ľ Ŀ Ł Ñ Ń Ņ Ň Ŋ Ó Ò Ô Ō Ŏ Ŕ Ŗ Ř Ś Ŝ Ş S Ţ Ť Ŧ ß Þ Ú Ù Û Ü Ũ Ū Ŭ Ů Ų Ŵ Ý Ŷ Ÿ Ű Ź Ż Ʒ Æ Ø Œ Ő Ə 1 2 3 4 5 6 7 8 9 %0 § %! %" # ¤ %% %& %/ %( %) %= %? ½ %@ £ %$ ‚ %{ %[ %] %} %< %> %*; ! Symbols for likely hyphenated words
+DUMMYSETCANBEUSEDTOTESTBUGS = a b c ;
+
+Definitions
+DUMMYDEFINITIONCANBEUSEDTOTESTBUGS = a | b | c ;
+
+Rules
+"Disallow no hyphen between equal vowels"
+%{hyph%?%}:0 /<= VOWEL :0* _ :0* VOWEL ; where VOWEL in Vowels matched ;
+
