@@ -15,7 +15,7 @@ use crate::ast::{
     TwolcFile, TwolcRegex, TwolcRule, UnaryOp, VarMatcher, VariableAssignment, VariableBlock,
 };
 use crate::lexer::{LexError, tokenize};
-use crate::token::Token;
+use crate::token::{Token, describe};
 use nfst_syntax::{Diagnostic, Span, Spanned};
 use smol_str::SmolStr;
 
@@ -97,7 +97,7 @@ impl Parser {
             Some(t) if std::mem::discriminant(t) == std::mem::discriminant(expected) => {
                 Ok(self.bump().unwrap().1)
             }
-            _ => Err(self.err(format!("expected {label}, got {:?}", self.peek()))),
+            _ => Err(self.err(format!("expected {label}, got {}", describe(self.peek())))),
         }
     }
 
@@ -116,7 +116,10 @@ impl Parser {
         let rules = self.parse_rules()?;
 
         if !self.is_at_end() {
-            return Err(self.err(format!("unexpected trailing input: {:?}", self.peek())));
+            return Err(self.err(format!(
+                "unexpected trailing input: {}",
+                describe(self.peek())
+            )));
         }
 
         Ok(Spanned::new(
@@ -233,7 +236,10 @@ impl Parser {
                 self.bump();
             }
             _ => {
-                return Err(self.err(format!("expected `Rules` section, got {:?}", self.peek())));
+                return Err(self.err(format!(
+                    "expected `Rules` section, got {}",
+                    describe(self.peek())
+                )));
             }
         }
         let mut rules = Vec::new();
@@ -245,13 +251,16 @@ impl Parser {
 
     fn parse_rule(&mut self) -> Result<Spanned<TwolcRule>, Diagnostic> {
         let start = self.current_start();
-        let name = match self.bump() {
-            Some((Token::RuleName(s), _)) => s,
+        let name = match self.peek().cloned() {
+            Some(Token::RuleName(s)) => {
+                self.bump();
+                s
+            }
             other => {
-                return Err(Diagnostic::error(
-                    self.peek_span(),
-                    format!("expected rule name (`\"…\"`), got {other:?}"),
-                ));
+                return Err(self.err(format!(
+                    "expected rule name (`\"…\"`), got {}",
+                    describe(other.as_ref())
+                )));
             }
         };
         let center = self.parse_rule_center()?;
@@ -310,39 +319,69 @@ impl Parser {
         Ok(pairs)
     }
 
+    /// Upstream pre1's `PAIR` productions (htwolcpre1-parser.yy): an elided
+    /// side defaults rather than being an error, so `X` is the identity pair
+    /// `X:X`, `X:` is `X:?`, `:Y` is `?:Y` and a lone `:` is `?:?`. Only
+    /// `X:Y` writes both sides out. The bare form is why a rule centre can
+    /// be a single symbol — `%{hyph%?%} <= _ ;`.
     fn parse_pair_only(&mut self) -> Result<AlphabetPair, Diagnostic> {
+        // `:Y` and `:` — no upper side written, so the upper is the
+        // wildcard. The lexer already supplies the `?` for a `:` that no
+        // symbol follows, so the lower side reads as an ordinary symbol.
+        if matches!(self.peek(), Some(Token::Colon)) {
+            self.bump();
+            let lower = self.expect_pair_symbol("pair lower")?;
+            return Ok(AlphabetPair {
+                upper: "?".into(),
+                lower,
+            });
+        }
         let upper = self.expect_pair_symbol("pair upper")?;
-        self.expect(&Token::Colon, "`:`")?;
+        if !matches!(self.peek(), Some(Token::Colon)) {
+            return Ok(AlphabetPair {
+                lower: upper.clone(),
+                upper,
+            });
+        }
+        self.bump();
         let lower = self.expect_pair_symbol("pair lower")?;
         Ok(AlphabetPair { upper, lower })
     }
 
     fn expect_pair_symbol(&mut self, label: &str) -> Result<SmolStr, Diagnostic> {
-        match self.bump() {
-            Some((Token::Symbol(s), _)) => Ok(s),
-            Some((Token::QuestionMark, _)) => Ok("?".into()),
-            other => Err(Diagnostic::error(
-                self.peek_span(),
-                format!("expected {label} symbol, got {other:?}"),
-            )),
+        match self.peek().cloned() {
+            Some(Token::Symbol(s)) => {
+                self.bump();
+                Ok(s)
+            }
+            Some(Token::QuestionMark) => {
+                self.bump();
+                Ok("?".into())
+            }
+            other => Err(self.err(format!(
+                "expected {label} symbol, got {}",
+                describe(other.as_ref())
+            ))),
         }
     }
 
     fn parse_rule_operator(&mut self) -> Result<RuleOp, Diagnostic> {
-        match self.bump() {
-            Some((Token::RightArrow, _)) | Some((Token::ReRightArrow, _)) => Ok(RuleOp::Right),
-            Some((Token::LeftArrow, _)) | Some((Token::ReLeftArrow, _)) => Ok(RuleOp::Left),
-            Some((Token::LeftRightArrow, _)) | Some((Token::ReLeftRightArrow, _)) => {
-                Ok(RuleOp::LeftRight)
+        let op = match self.peek() {
+            Some(Token::RightArrow) | Some(Token::ReRightArrow) => RuleOp::Right,
+            Some(Token::LeftArrow) | Some(Token::ReLeftArrow) => RuleOp::Left,
+            Some(Token::LeftRightArrow) | Some(Token::ReLeftRightArrow) => RuleOp::LeftRight,
+            Some(Token::LeftRestrictionArrow) | Some(Token::ReLeftRestrictionArrow) => {
+                RuleOp::NotLeft
             }
-            Some((Token::LeftRestrictionArrow, _)) | Some((Token::ReLeftRestrictionArrow, _)) => {
-                Ok(RuleOp::NotLeft)
+            other => {
+                return Err(self.err(format!(
+                    "expected rule arrow (`=>`, `<=`, `<=>`, `/<=`), got {}",
+                    describe(other)
+                )));
             }
-            other => Err(Diagnostic::error(
-                self.peek_span(),
-                format!("expected rule arrow (=>, <=, <=>, /<=), got {other:?}"),
-            )),
-        }
+        };
+        self.bump();
+        Ok(op)
     }
 
     fn parse_rule_contexts(&mut self) -> Result<Vec<RuleContext>, Diagnostic> {
@@ -541,27 +580,27 @@ impl Parser {
     }
 
     fn parse_repeat_count(&mut self) -> Result<(u32, Option<u32>), Diagnostic> {
-        match self.bump() {
-            Some((Token::Symbol(s), span)) => {
-                if let Some((a, b)) = s.split_once(',') {
-                    let n: u32 = a.parse().map_err(|_| {
-                        Diagnostic::error(span.clone(), format!("not a number: {a:?}"))
-                    })?;
-                    let k: u32 = b.parse().map_err(|_| {
-                        Diagnostic::error(span.clone(), format!("not a number: {b:?}"))
-                    })?;
-                    Ok((n, Some(k)))
-                } else {
-                    let n: u32 = s
-                        .parse()
-                        .map_err(|_| Diagnostic::error(span, format!("not a number: {s:?}")))?;
-                    Ok((n, None))
-                }
-            }
-            other => Err(Diagnostic::error(
-                self.peek_span(),
-                format!("expected number after `^`, got {other:?}"),
-            )),
+        let Some(Token::Symbol(s)) = self.peek().cloned() else {
+            return Err(self.err(format!(
+                "expected number after `^`, got {}",
+                describe(self.peek())
+            )));
+        };
+        let span = self.peek_span();
+        self.bump();
+        if let Some((a, b)) = s.split_once(',') {
+            let n: u32 = a
+                .parse()
+                .map_err(|_| Diagnostic::error(span.clone(), format!("not a number: {a:?}")))?;
+            let k: u32 = b
+                .parse()
+                .map_err(|_| Diagnostic::error(span.clone(), format!("not a number: {b:?}")))?;
+            Ok((n, Some(k)))
+        } else {
+            let n: u32 = s
+                .parse()
+                .map_err(|_| Diagnostic::error(span, format!("not a number: {s:?}")))?;
+            Ok((n, None))
         }
     }
 
@@ -654,10 +693,10 @@ impl Parser {
             }
             other => {
                 let _ = stop_on_semi;
-                Err(Diagnostic::error(
-                    self.peek_span(),
-                    format!("unexpected token in regex: {other:?}"),
-                ))
+                Err(self.err(format!(
+                    "unexpected token in regex: {}",
+                    describe(other.as_ref())
+                )))
             }
         }
     }
@@ -717,12 +756,15 @@ impl Parser {
     // ───────────────────────── helpers ─────────────────────────
 
     fn expect_symbol_string(&mut self, label: &str) -> Result<SmolStr, Diagnostic> {
-        match self.bump() {
-            Some((Token::Symbol(s), _)) => Ok(s),
-            other => Err(Diagnostic::error(
-                self.peek_span(),
-                format!("expected {label}, got {other:?}"),
-            )),
+        match self.peek().cloned() {
+            Some(Token::Symbol(s)) => {
+                self.bump();
+                Ok(s)
+            }
+            other => Err(self.err(format!(
+                "expected {label}, got {}",
+                describe(other.as_ref())
+            ))),
         }
     }
 
@@ -774,6 +816,78 @@ mod tests {
         assert_eq!(f.rules[1].value.operator, RuleOp::Left);
         assert_eq!(f.rules[2].value.operator, RuleOp::LeftRight);
         assert_eq!(f.rules[3].value.operator, RuleOp::NotLeft);
+    }
+
+    fn center(f: &TwolcFile) -> &[AlphabetPair] {
+        match &f.rules[0].value.center {
+            RuleCenter::Pair(pairs) => pairs,
+            other => panic!("expected a pair center, got {other:?}"),
+        }
+    }
+
+    fn pair(upper: &str, lower: &str) -> AlphabetPair {
+        AlphabetPair {
+            upper: upper.into(),
+            lower: lower.into(),
+        }
+    }
+
+    #[test]
+    fn bare_symbol_center_is_the_identity_pair() {
+        // Upstream pre1's `PAIR: GRAMMAR_SYMBOL_SPACE` production.
+        let f = parsed("Alphabet a b ;\nRules\n\"r\" a <= _ ;");
+        assert_eq!(center(&f), [pair("a", "a")]);
+    }
+
+    #[test]
+    fn bare_escaped_symbol_center() {
+        // The omorfi shape: a multi-character escaped symbol standing alone
+        // as the centre. `%{hyph%?%}` unescapes to `{hyph?}`.
+        let f = parsed("Alphabet %{hyph%?%} ;\nRules\n\"r\" %{hyph%?%} <= _ ;");
+        assert_eq!(center(&f), [pair("{hyph?}", "{hyph?}")]);
+    }
+
+    #[test]
+    fn elided_center_sides_default_to_the_wildcard() {
+        let f = parsed("Alphabet a b ;\nRules\n\"r\" a: <= _ ;");
+        assert_eq!(center(&f), [pair("a", "?")]);
+
+        let f = parsed("Alphabet a b ;\nRules\n\"r\" :b <= _ ;");
+        assert_eq!(center(&f), [pair("?", "b")]);
+
+        let f = parsed("Alphabet a b ;\nRules\n\"r\" : <= _ ;");
+        assert_eq!(center(&f), [pair("?", "?")]);
+    }
+
+    #[test]
+    fn center_union_mixes_bare_and_written_pairs() {
+        let f = parsed("Alphabet a b c d ;\nRules\n\"r\" a | b:c | :d <= _ ;");
+        assert_eq!(center(&f), [pair("a", "a"), pair("b", "c"), pair("?", "d")]);
+    }
+
+    #[test]
+    fn bracketed_center_takes_bare_pairs_too() {
+        let f = parsed("Alphabet a b c ;\nRules\n\"r\" [ a | b:c ] <= _ ;");
+        assert_eq!(center(&f), [pair("a", "a"), pair("b", "c")]);
+    }
+
+    #[test]
+    fn diagnostics_name_the_offending_token_not_its_debug_shape() {
+        let e = parse("Alphabet a b ;\nRules\n\"r\" a b _ ;").expect_err("no arrow");
+        let msg = &e.diagnostics[0].message;
+        assert!(
+            msg.contains("expected rule arrow (`=>`, `<=`, `<=>`, `/<=`), got `b`"),
+            "{msg}"
+        );
+        assert!(!msg.contains("Some("), "{msg}");
+    }
+
+    #[test]
+    fn diagnostics_name_end_of_input() {
+        let e = parse("Alphabet a b ;\nRules\n\"r\" a:b").expect_err("truncated rule");
+        let msg = &e.diagnostics[0].message;
+        assert!(msg.contains("got end of input"), "{msg}");
+        assert!(!msg.contains("None"), "{msg}");
     }
 
     #[test]

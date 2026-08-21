@@ -88,6 +88,23 @@ fn omorfi_hyphens_uses_an_unparenthesised_set_name() {
 }
 
 #[test]
+fn omorfi_recase_uses_a_bare_symbol_rule_centre() {
+    // Regression: divvun/hfst-rs#3 (second report). The rule centre is the
+    // single symbol `%{hyph%?%}` with no `:`, upstream's
+    // `PAIR: GRAMMAR_SYMBOL_SPACE` production, which we used to reject for
+    // want of a `:`. It means the identity pair.
+    let path = fixtures_dir().join("omorfi__src__generated__omorfi-recase-any.twolc");
+    let src = fs::read_to_string(&path).unwrap();
+    let f = parse(&src).unwrap_or_else(|e| panic!("parse: {e:?}"));
+    let nfst_twolc::RuleCenter::Pair(pairs) = &f.value.rules[0].value.center else {
+        panic!("expected a pair centre");
+    };
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].upper, "{hyph?}");
+    assert_eq!(pairs[0].lower, "{hyph?}");
+}
+
+#[test]
 fn snippet_where_matched_records_matcher() {
     let path = fixtures_dir().join("snippet-where-matched.twolc");
     let src = fs::read_to_string(&path).unwrap();

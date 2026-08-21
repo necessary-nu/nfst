@@ -1,8 +1,8 @@
 # twolc fixture corpus
 
-## Real-world (18 files, ~8.3k lines)
+## Real-world (19 files, ~8.4k lines)
 
-Vendored from `/Users/brendan/git/divvun/`, except the omorfi file, which is
+Vendored from `/Users/brendan/git/divvun/`, except the omorfi files, which are
 generated output from `github.com/flammie/omorfi`. Filenames encode the
 source path so files with the same basename across repos don't collide.
 
@@ -20,10 +20,14 @@ morphological grammars use.
 | `hfst__python__test__test{1,2,3}.twolc` (×3 repos) | HFST Python test grammars | 4 each |
 | `hfst__scripts__windows_tests__test.twolc` (×3 repos) | HFST Windows tests | 4 each |
 | `omorfi__src__generated__omorfi-hyphens.twolc` | omorfi hyphenation rules (`generate-twolcs.py -r hyphens`) | 42 |
+| `omorfi__src__generated__omorfi-recase-any.twolc` | omorfi recasing rules (`generate-twolcs.py -r recase`), abridged as reported | 46 |
 
-The omorfi file is the regression case for divvun/hfst-rs#3: it is the only
-real-world grammar here that uses the unparenthesised `where V in SetName`
-form.
+Both omorfi files are regression cases for divvun/hfst-rs#3, and each is the
+only real-world grammar here carrying its construct: `omorfi-hyphens` uses
+the unparenthesised `where V in SetName` form, and `omorfi-recase-any` writes
+a rule centre as a bare symbol (`%{hyph%?%} <= _ ;`) rather than a pair. The
+recase file is the abridged copy from the issue thread — its alphabet keeps
+the `! snip` comment where the generator's full Finnish alphabet was cut.
 
 ## Curated single-construct snippets
 
