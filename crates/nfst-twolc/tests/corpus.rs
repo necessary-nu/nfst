@@ -99,9 +99,13 @@ fn omorfi_recase_uses_a_bare_symbol_rule_centre() {
     let nfst_twolc::RuleCenter::Pair(pairs) = &f.value.rules[0].value.center else {
         panic!("expected a pair centre");
     };
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].upper, "{hyph?}");
-    assert_eq!(pairs[0].lower, "{hyph?}");
+    assert_eq!(
+        pairs,
+        &[nfst_twolc::CenterPair {
+            upper: nfst_twolc::CenterSide::Symbol("{hyph?}".into()),
+            lower: nfst_twolc::CenterSide::Symbol("{hyph?}".into()),
+        }]
+    );
 }
 
 #[test]

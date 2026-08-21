@@ -3,8 +3,9 @@
 //! bracketing.
 
 use crate::ast::{
-    AlphabetPair, BinaryOp, RuleCenter, RuleContext, RuleOp, SetDefinition, TwolcDefinition,
-    TwolcFile, TwolcRegex, TwolcRule, UnaryOp, VarMatcher, VariableAssignment, VariableBlock,
+    BinaryOp, CenterPair, CenterSide, RuleCenter, RuleContext, RuleOp, SetDefinition,
+    TwolcDefinition, TwolcFile, TwolcRegex, TwolcRule, UnaryOp, VarMatcher, VariableAssignment,
+    VariableBlock,
 };
 use nfst_syntax::Spanned;
 use smol_str::{SmolStr, SmolStrBuilder};
@@ -119,7 +120,7 @@ fn write_rule(out: &mut SmolStrBuilder, r: &TwolcRule) {
 fn write_rule_center(out: &mut SmolStrBuilder, c: &RuleCenter) {
     match c {
         RuleCenter::Pair(pairs) if pairs.len() == 1 => {
-            write_alphabet_pair(out, &pairs[0]);
+            write_center_pair(out, &pairs[0]);
         }
         RuleCenter::Pair(pairs) => {
             out.push('[');
@@ -127,7 +128,7 @@ fn write_rule_center(out: &mut SmolStrBuilder, c: &RuleCenter) {
                 if i > 0 {
                     out.push_str(" | ");
                 }
-                write_alphabet_pair(out, p);
+                write_center_pair(out, p);
             }
             out.push(']');
         }
@@ -139,10 +140,21 @@ fn write_rule_center(out: &mut SmolStrBuilder, c: &RuleCenter) {
     }
 }
 
-fn write_alphabet_pair(out: &mut SmolStrBuilder, p: &AlphabetPair) {
-    out.push_str(&escape_symbol(&p.upper));
+/// Both sides always written out: the source's elided forms (`a:`, `:b`, `:`)
+/// print as their meaning (`a:?`, `?:b`, `?:?`), which re-parses to the same
+/// tree. `escape_symbol` writes a literal `?` symbol as `%?`, so it stays
+/// distinct from the wildcard on the way back in.
+fn write_center_pair(out: &mut SmolStrBuilder, p: &CenterPair) {
+    write_center_side(out, &p.upper);
     out.push(':');
-    out.push_str(&escape_symbol(&p.lower));
+    write_center_side(out, &p.lower);
+}
+
+fn write_center_side(out: &mut SmolStrBuilder, s: &CenterSide) {
+    match s {
+        CenterSide::Any => out.push('?'),
+        CenterSide::Symbol(sym) => out.push_str(&escape_symbol(sym)),
+    }
 }
 
 fn write_rule_context(out: &mut SmolStrBuilder, c: &RuleContext) {

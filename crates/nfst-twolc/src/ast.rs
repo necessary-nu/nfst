@@ -51,9 +51,28 @@ pub struct TwolcRule {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuleCenter {
     /// `a:b` or `a:b | c:d` — flat list of alternatives.
-    Pair(Vec<AlphabetPair>),
+    Pair(Vec<CenterPair>),
     /// `:[ E ]:` — regex-form rule center.
     Regex(Box<Spanned<TwolcRegex>>),
+}
+
+/// One alternative of a pair-form rule centre. Unlike an [`AlphabetPair`],
+/// either side may be the `?` wildcard, so the sides cannot be plain strings —
+/// the wildcard `?` and the escaped literal `%?` would both read as `"?"`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CenterPair {
+    pub upper: CenterSide,
+    pub lower: CenterSide,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CenterSide {
+    /// `?` — any symbol, resolved by the consumer against the declared
+    /// alphabet. Also what an elided side means: `a:` is `a:?`, `:b` is `?:b`.
+    Any,
+    /// A named symbol, `%`-escapes already resolved. An escaped `%?` lands
+    /// here, as the literal one-character symbol `?`.
+    Symbol(SmolStr),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

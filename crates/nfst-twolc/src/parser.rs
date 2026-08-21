@@ -11,8 +11,9 @@
 //! atoms.
 
 use crate::ast::{
-    AlphabetPair, BinaryOp, RuleCenter, RuleContext, RuleOp, SetDefinition, TwolcDefinition,
-    TwolcFile, TwolcRegex, TwolcRule, UnaryOp, VarMatcher, VariableAssignment, VariableBlock,
+    AlphabetPair, BinaryOp, CenterPair, CenterSide, RuleCenter, RuleContext, RuleOp, SetDefinition,
+    TwolcDefinition, TwolcFile, TwolcRegex, TwolcRule, UnaryOp, VarMatcher, VariableAssignment,
+    VariableBlock,
 };
 use crate::lexer::{LexError, tokenize};
 use crate::token::{Token, describe};
@@ -309,7 +310,7 @@ impl Parser {
         Ok(RuleCenter::Pair(pairs))
     }
 
-    fn parse_pair_list(&mut self) -> Result<Vec<AlphabetPair>, Diagnostic> {
+    fn parse_pair_list(&mut self) -> Result<Vec<CenterPair>, Diagnostic> {
         let mut pairs = Vec::new();
         pairs.push(self.parse_pair_only()?);
         while matches!(self.peek(), Some(Token::Union)) {
@@ -324,39 +325,42 @@ impl Parser {
     /// `X:X`, `X:` is `X:?`, `:Y` is `?:Y` and a lone `:` is `?:?`. Only
     /// `X:Y` writes both sides out. The bare form is why a rule centre can
     /// be a single symbol — `%{hyph%?%} <= _ ;`.
-    fn parse_pair_only(&mut self) -> Result<AlphabetPair, Diagnostic> {
+    fn parse_pair_only(&mut self) -> Result<CenterPair, Diagnostic> {
         // `:Y` and `:` — no upper side written, so the upper is the
         // wildcard. The lexer already supplies the `?` for a `:` that no
-        // symbol follows, so the lower side reads as an ordinary symbol.
+        // symbol follows, so the lower side reads as an ordinary side.
         if matches!(self.peek(), Some(Token::Colon)) {
             self.bump();
-            let lower = self.expect_pair_symbol("pair lower")?;
-            return Ok(AlphabetPair {
-                upper: "?".into(),
+            let lower = self.expect_pair_side("pair lower")?;
+            return Ok(CenterPair {
+                upper: CenterSide::Any,
                 lower,
             });
         }
-        let upper = self.expect_pair_symbol("pair upper")?;
+        let upper = self.expect_pair_side("pair upper")?;
         if !matches!(self.peek(), Some(Token::Colon)) {
-            return Ok(AlphabetPair {
+            return Ok(CenterPair {
                 lower: upper.clone(),
                 upper,
             });
         }
         self.bump();
-        let lower = self.expect_pair_symbol("pair lower")?;
-        Ok(AlphabetPair { upper, lower })
+        let lower = self.expect_pair_side("pair lower")?;
+        Ok(CenterPair { upper, lower })
     }
 
-    fn expect_pair_symbol(&mut self, label: &str) -> Result<SmolStr, Diagnostic> {
+    /// One side of a centre pair. `?` is the wildcard; an escaped `%?` has
+    /// already been unescaped by the lexer into an ordinary `Symbol` whose
+    /// text happens to be `?`, and stays a named symbol here.
+    fn expect_pair_side(&mut self, label: &str) -> Result<CenterSide, Diagnostic> {
         match self.peek().cloned() {
             Some(Token::Symbol(s)) => {
                 self.bump();
-                Ok(s)
+                Ok(CenterSide::Symbol(s))
             }
             Some(Token::QuestionMark) => {
                 self.bump();
-                Ok("?".into())
+                Ok(CenterSide::Any)
             }
             other => Err(self.err(format!(
                 "expected {label} symbol, got {}",
@@ -818,17 +822,23 @@ mod tests {
         assert_eq!(f.rules[3].value.operator, RuleOp::NotLeft);
     }
 
-    fn center(f: &TwolcFile) -> &[AlphabetPair] {
+    fn center(f: &TwolcFile) -> &[CenterPair] {
         match &f.rules[0].value.center {
             RuleCenter::Pair(pairs) => pairs,
             other => panic!("expected a pair center, got {other:?}"),
         }
     }
 
-    fn pair(upper: &str, lower: &str) -> AlphabetPair {
-        AlphabetPair {
-            upper: upper.into(),
-            lower: lower.into(),
+    /// `"?"` spells the wildcard; anything else is a named symbol. Tests that
+    /// need the literal `?` symbol build `CenterSide::Symbol` directly.
+    fn pair(upper: &str, lower: &str) -> CenterPair {
+        let side = |s: &str| match s {
+            "?" => CenterSide::Any,
+            other => CenterSide::Symbol(other.into()),
+        };
+        CenterPair {
+            upper: side(upper),
+            lower: side(lower),
         }
     }
 
@@ -857,6 +867,30 @@ mod tests {
 
         let f = parsed("Alphabet a b ;\nRules\n\"r\" : <= _ ;");
         assert_eq!(center(&f), [pair("?", "?")]);
+    }
+
+    #[test]
+    fn escaped_question_mark_centre_is_a_symbol_not_the_wildcard() {
+        // `%?` is the literal one-character symbol; only a bare `?` is the
+        // wildcard. Both read as the text "?", so the distinction has to live
+        // in the AST rather than in the string.
+        let f = parsed("Alphabet %? a ;\nRules\n\"r\" %?:a <= _ ;");
+        assert_eq!(
+            center(&f),
+            [CenterPair {
+                upper: CenterSide::Symbol("?".into()),
+                lower: CenterSide::Symbol("a".into()),
+            }]
+        );
+
+        let f = parsed("Alphabet %? a ;\nRules\n\"r\" ?:a <= _ ;");
+        assert_eq!(
+            center(&f),
+            [CenterPair {
+                upper: CenterSide::Any,
+                lower: CenterSide::Symbol("a".into()),
+            }]
+        );
     }
 
     #[test]
