@@ -112,6 +112,7 @@ fn strip_groups_rule(rule: &ReplaceRule) -> ReplaceRule {
 fn strip_groups_mapping(m: &MappingPair) -> MappingPair {
     MappingPair {
         upper: strip_groups_side(&m.upper),
+        arrow: m.arrow,
         kind: match &m.kind {
             MappingKind::Plain { lower } => MappingKind::Plain {
                 lower: strip_groups_side(lower),
@@ -230,7 +231,7 @@ fn write_expr(out: &mut SmolStrBuilder, expr: &XreExpr) {
             write_atom_or_bracketed(out, &expr.value);
         }
 
-        XreExpr::Replace { arrow, rules } => write_replace(out, *arrow, rules),
+        XreExpr::Replace { rules, .. } => write_replace(out, rules),
 
         XreExpr::Restriction { body, contexts } => {
             write_atom_or_bracketed(out, &body.value);
@@ -358,8 +359,7 @@ fn write_binary(out: &mut SmolStrBuilder, op: BinaryOp, l: &XreExpr, r: &XreExpr
     write_atom_or_bracketed(out, r);
 }
 
-fn write_replace(out: &mut SmolStrBuilder, arrow: ReplaceArrow, rules: &[ReplaceRule]) {
-    let arrow_str = replace_arrow_str(arrow);
+fn write_replace(out: &mut SmolStrBuilder, rules: &[ReplaceRule]) {
     for (i, rule) in rules.iter().enumerate() {
         if i > 0 {
             out.push_str(" ,, ");
@@ -368,7 +368,7 @@ fn write_replace(out: &mut SmolStrBuilder, arrow: ReplaceArrow, rules: &[Replace
             if j > 0 {
                 out.push_str(" , ");
             }
-            write_mapping_pair(out, m, arrow_str);
+            write_mapping_pair(out, m, replace_arrow_str(m.arrow));
         }
         if let Some(cx) = &rule.contexts {
             out.push(' ');

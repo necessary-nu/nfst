@@ -307,8 +307,13 @@ fn function_call_two_args() {
 }
 
 fn plain(upper: MappingSide, lower: MappingSide) -> MappingPair {
+    plain_with(upper, lower, ReplaceArrow::Right)
+}
+
+fn plain_with(upper: MappingSide, lower: MappingSide, arrow: ReplaceArrow) -> MappingPair {
     MappingPair {
         upper,
+        arrow,
         kind: MappingKind::Plain { lower },
     }
 }
@@ -457,6 +462,7 @@ fn replace_with_markup_pre_and_post() {
         rules: vec![ReplaceRule {
             mappings: vec![MappingPair {
                 upper: MappingSide::Expr(b(sym("a"))),
+                arrow: ReplaceArrow::Right,
                 kind: MappingKind::Markup {
                     pre: Some(MappingSide::Expr(b(sym("b")))),
                     post: Some(MappingSide::Expr(b(sym("c")))),
@@ -476,6 +482,7 @@ fn replace_with_markup_pre_only() {
         rules: vec![ReplaceRule {
             mappings: vec![MappingPair {
                 upper: MappingSide::Expr(b(sym("a"))),
+                arrow: ReplaceArrow::Right,
                 kind: MappingKind::Markup {
                     pre: Some(MappingSide::Expr(b(sym("b")))),
                     post: None,
@@ -495,6 +502,7 @@ fn replace_with_markup_post_only() {
         rules: vec![ReplaceRule {
             mappings: vec![MappingPair {
                 upper: MappingSide::Expr(b(sym("a"))),
+                arrow: ReplaceArrow::Right,
                 kind: MappingKind::Markup {
                     pre: None,
                     post: Some(MappingSide::Expr(b(sym("c")))),
@@ -576,6 +584,65 @@ fn span_on_inner_symbol_is_just_that_symbol() {
         panic!("expected concat, got {:?}", r.value);
     }
 }
+
+// ────────── mixed arrows in a parallel rule list (divvun/foma-rs#4) ──────────
+
+// `regex.y` lexes an ARROW per `n0 ARROW n0` unit and nothing requires the
+// arrows in a parallel list to agree, so each mapping keeps its own. Here `a`
+// is replaced obligatorily while `c` alternates optionally, both under the one
+// shared context.
+#[test]
+fn parallel_rule_list_may_mix_arrows() {
+    let expected = XreExpr::Replace {
+        arrow: ReplaceArrow::Right,
+        rules: vec![ReplaceRule {
+            mappings: vec![
+                plain_with(
+                    MappingSide::Expr(b(sym("a"))),
+                    MappingSide::Expr(b(sym("b"))),
+                    ReplaceArrow::Right,
+                ),
+                plain_with(
+                    MappingSide::Expr(b(sym("c"))),
+                    MappingSide::Expr(b(sym("d"))),
+                    ReplaceArrow::OptionalRight,
+                ),
+            ],
+            contexts: Some(ReplaceContexts {
+                mark: ContextMark::UpperUpper,
+                items: vec![ReplaceContext {
+                    left: None,
+                    right: Some(b(sym("e"))),
+                }],
+            }),
+        }],
+    };
+    assert_eq!(parsed("a -> b, c (->) d || _ e"), expected);
+}
+
+// The same freedom applies across `,,`-separated rule blocks, which the old
+// arrow-agreement check also rejected.
+#[test]
+fn commacomma_rules_may_mix_arrows() {
+    let r = parse("a -> b ,, c <- d").unwrap();
+    let XreExpr::Replace { rules, .. } = &r.value else {
+        panic!("expected Replace, got {:?}", r.value);
+    };
+    assert_eq!(rules[0].mappings[0].arrow, ReplaceArrow::Right);
+    assert_eq!(rules[1].mappings[0].arrow, ReplaceArrow::Left);
+}
+
+// Each mapping round-trips with the arrow it was written with, rather than the
+// whole list borrowing the first one's.
+#[test]
+fn mixed_arrows_round_trip() {
+    let r = parse("a -> b , c (->) d , e @-> f || g _ h").unwrap();
+    assert_eq!(
+        nfst_xre::pretty_print(&r),
+        "a -> b , c (->) d , e @-> f || g _ h"
+    );
+}
+
 // ────────── `_xxx(` builtin functions (divvun/foma-rs#3) ──────────
 
 // `_` is not a NAME_CH, so without a dedicated rule the leading underscore

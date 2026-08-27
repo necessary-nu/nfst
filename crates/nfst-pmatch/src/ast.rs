@@ -94,6 +94,9 @@ pub enum PmatchExpr {
 
     // ──────────────── replacement and restriction ────────────────
     Replace {
+        /// The first mapping's arrow, retained for callers that only ever deal
+        /// in uniform rule lists. A compiler must read each `MappingPair`'s own
+        /// `arrow` instead — a parallel list may mix them.
         arrow: ReplaceArrow,
         rules: Vec<PmatchReplaceRule>,
     },
@@ -216,6 +219,10 @@ pub struct RestrContext {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MappingPair {
     pub upper: MappingSide,
+    /// The arrow this mapping was written with. Nothing requires the arrows in
+    /// a parallel list to agree, so each mapping keeps its own obligatory /
+    /// optional behaviour inside the shared rule context.
+    pub arrow: ReplaceArrow,
     pub kind: MappingKind,
 }
 

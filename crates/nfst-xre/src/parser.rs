@@ -188,18 +188,17 @@ impl Parser {
 
         if let Some(arrow) = self.peek_replace_arrow() {
             self.bump();
-            let mapping = self.parse_mapping_after_arrow(first)?;
+            let mapping = self.parse_mapping_after_arrow(first, arrow)?;
 
             // additional mapping pairs separated by COMMA in the same arrow
             let mut mappings = vec![mapping];
             while matches!(self.peek(), Some(Token::Comma)) && self.peek_starts_mapping_lhs_at(1) {
                 self.bump(); // ,
                 let upper = self.parse_mapping_lhs()?;
+                // Each mapping keeps its own arrow: regex.y imposes no
+                // agreement across a parallel list.
                 let arrow2 = self.expect_replace_arrow()?;
-                if arrow2 != arrow {
-                    return Err(self.err("replace arrows in a parallel rule list must match"));
-                }
-                mappings.push(self.parse_mapping_after_arrow_with_upper(upper)?);
+                mappings.push(self.parse_mapping_after_arrow_with_upper(upper, arrow2)?);
             }
 
             let contexts = self.try_parse_replace_contexts()?;
@@ -207,7 +206,7 @@ impl Parser {
 
             while matches!(self.peek(), Some(Token::Commacomma)) {
                 self.bump();
-                let extra = self.parse_replace_rule(arrow)?;
+                let extra = self.parse_replace_rule()?;
                 rules.push(extra);
             }
 
@@ -222,24 +221,15 @@ impl Parser {
 
     /// One rule: one or more `MAPPINGPAIR` joined by COMMA, optional contexts.
     /// Caller has already consumed any leading `,,`.
-    fn parse_replace_rule(
-        &mut self,
-        expected_arrow: ReplaceArrow,
-    ) -> Result<ReplaceRule, Diagnostic> {
+    fn parse_replace_rule(&mut self) -> Result<ReplaceRule, Diagnostic> {
         let upper = self.parse_mapping_lhs()?;
         let arrow = self.expect_replace_arrow()?;
-        if arrow != expected_arrow {
-            return Err(self.err("replace arrows in a parallel rule list must match"));
-        }
-        let mut mappings = vec![self.parse_mapping_after_arrow_with_upper(upper)?];
+        let mut mappings = vec![self.parse_mapping_after_arrow_with_upper(upper, arrow)?];
         while matches!(self.peek(), Some(Token::Comma)) && self.peek_starts_mapping_lhs_at(1) {
             self.bump();
             let u = self.parse_mapping_lhs()?;
             let a2 = self.expect_replace_arrow()?;
-            if a2 != expected_arrow {
-                return Err(self.err("replace arrows in a parallel rule list must match"));
-            }
-            mappings.push(self.parse_mapping_after_arrow_with_upper(u)?);
+            mappings.push(self.parse_mapping_after_arrow_with_upper(u, a2)?);
         }
         let contexts = self.try_parse_replace_contexts()?;
         Ok(ReplaceRule { mappings, contexts })
@@ -249,13 +239,18 @@ impl Parser {
     /// (which arrived here as an `SpannedXre` from a `parse_regexp3()`). The
     /// arrow has been consumed; this method handles the rhs and any markup
     /// tail.
-    fn parse_mapping_after_arrow(&mut self, upper: SpannedXre) -> Result<MappingPair, Diagnostic> {
-        self.parse_mapping_after_arrow_with_upper(MappingSide::from_expr(upper))
+    fn parse_mapping_after_arrow(
+        &mut self,
+        upper: SpannedXre,
+        arrow: ReplaceArrow,
+    ) -> Result<MappingPair, Diagnostic> {
+        self.parse_mapping_after_arrow_with_upper(MappingSide::from_expr(upper), arrow)
     }
 
     fn parse_mapping_after_arrow_with_upper(
         &mut self,
         upper: MappingSide,
+        arrow: ReplaceArrow,
     ) -> Result<MappingPair, Diagnostic> {
         // The four MAPPINGPAIR rhs shapes from xre_parse.yy:
         //   E                 — plain replacement
@@ -275,6 +270,7 @@ impl Parser {
             let post = self.parse_mapping_side()?;
             return Ok(MappingPair {
                 upper,
+                arrow,
                 kind: MappingKind::Markup {
                     pre: None,
                     post: Some(post),
@@ -294,6 +290,7 @@ impl Parser {
             };
             return Ok(MappingPair {
                 upper,
+                arrow,
                 kind: MappingKind::Markup {
                     pre: Some(first_rhs),
                     post,
@@ -303,6 +300,7 @@ impl Parser {
 
         Ok(MappingPair {
             upper,
+            arrow,
             kind: MappingKind::Plain { lower: first_rhs },
         })
     }
@@ -1136,6 +1134,7 @@ mod tests {
     fn left_arrow_replace() {
         let m = MappingPair {
             upper: MappingSide::Expr(b(XreExpr::Epsilon)),
+            arrow: ReplaceArrow::Left,
             kind: MappingKind::Plain {
                 lower: MappingSide::Expr(b(sym("a"))),
             },

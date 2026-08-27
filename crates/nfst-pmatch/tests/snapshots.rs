@@ -506,3 +506,38 @@ fn long_chain_stays_right_nested() {
     let f = parsed(&src);
     assert_eq!(concat_chain(body(&f)).len(), 10_000);
 }
+
+// ────────── mixed arrows in a parallel rule list ──────────
+
+// Nothing requires the arrows in a parallel rule list to agree: each mapping
+// keeps its own obligatory / optional behaviour inside the shared context.
+// Mirrors the same fix in nfst-xre (divvun/foma-rs#4).
+#[test]
+fn parallel_rule_list_may_mix_arrows() {
+    use nfst_pmatch::ReplaceArrow;
+    let f = parsed("Define TOP [ a -> b, c (->) d || _ e ];");
+    let mut expr = body(&f);
+    while let PmatchExpr::Group(inner) = expr {
+        expr = &inner.value;
+    }
+    let PmatchExpr::Replace { rules, .. } = expr else {
+        panic!("expected Replace, got {expr:?}");
+    };
+    let arrows: Vec<_> = rules[0].mappings.iter().map(|m| m.arrow).collect();
+    assert_eq!(
+        arrows,
+        vec![ReplaceArrow::Right, ReplaceArrow::OptionalRight]
+    );
+}
+
+// Each mapping round-trips with the arrow it was written with.
+#[test]
+fn mixed_arrows_round_trip() {
+    let src = "Define TOP [a -> b , c (->) d || _ e];";
+    let f = parse(src).unwrap_or_else(|e| panic!("parse: {e:?}"));
+    assert!(
+        nfst_pmatch::pretty_print(&f).contains("a -> b , c (->) d"),
+        "got {}",
+        nfst_pmatch::pretty_print(&f)
+    );
+}

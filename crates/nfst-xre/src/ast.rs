@@ -85,6 +85,9 @@ pub enum XreExpr {
     // ──────────────── replace and restriction ────────────────
     /// `mapping {,, mapping}* [|| ctx [, ctx]*]` etc.
     Replace {
+        /// The first mapping's arrow, retained for callers that only ever deal
+        /// in uniform rule lists. A compiler must read each `MappingPair`'s own
+        /// `arrow` instead — a parallel list may mix them.
         arrow: ReplaceArrow,
         rules: Vec<ReplaceRule>,
     },
@@ -209,6 +212,11 @@ pub struct RestrContext {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MappingPair {
     pub upper: MappingSide,
+    /// The arrow this mapping was written with. Upstream `regex.y` lexes an
+    /// `ARROW` per `n0 ARROW n0` unit and `add_rule()` stores it per rule, so a
+    /// parallel list may freely mix them: in `a -> b, c (->) d` the `c` mapping
+    /// keeps its own optionality inside the shared context.
+    pub arrow: ReplaceArrow,
     pub kind: MappingKind,
 }
 

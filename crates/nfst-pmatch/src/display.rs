@@ -139,7 +139,7 @@ fn write_expr(out: &mut SmolStrBuilder, e: &PmatchExpr) {
             write_atom_or_bracketed(out, &e.value);
             let _ = write!(out, "^{n},{k}");
         }
-        PmatchExpr::Replace { arrow, rules } => write_replace(out, *arrow, rules),
+        PmatchExpr::Replace { rules, .. } => write_replace(out, rules),
         PmatchExpr::Restriction { body, contexts } => {
             write_atom_or_bracketed(out, &body.value);
             out.push_str(" => ");
@@ -408,8 +408,8 @@ fn write_unary(out: &mut SmolStrBuilder, op: UnaryOp, inner: &PmatchExpr) {
     }
 }
 
-fn write_replace(out: &mut SmolStrBuilder, arrow: ReplaceArrow, rules: &[PmatchReplaceRule]) {
-    let arrow_str = match arrow {
+fn replace_arrow_str(arrow: ReplaceArrow) -> &'static str {
+    match arrow {
         ReplaceArrow::Right => "->",
         ReplaceArrow::OptionalRight => "(->)",
         ReplaceArrow::Left => "<-",
@@ -420,7 +420,10 @@ fn write_replace(out: &mut SmolStrBuilder, arrow: ReplaceArrow, rules: &[PmatchR
         ReplaceArrow::LtrShortest => "@>",
         ReplaceArrow::RtlLongest => "->@",
         ReplaceArrow::RtlShortest => ">@",
-    };
+    }
+}
+
+fn write_replace(out: &mut SmolStrBuilder, rules: &[PmatchReplaceRule]) {
     for (i, rule) in rules.iter().enumerate() {
         if i > 0 {
             out.push_str(" ,, ");
@@ -429,7 +432,7 @@ fn write_replace(out: &mut SmolStrBuilder, arrow: ReplaceArrow, rules: &[PmatchR
             if j > 0 {
                 out.push_str(" , ");
             }
-            write_mapping_pair(out, m, arrow_str);
+            write_mapping_pair(out, m, replace_arrow_str(m.arrow));
         }
         if let Some(cx) = &rule.contexts {
             out.push(' ');
@@ -769,6 +772,7 @@ fn strip_replace_rule(r: &PmatchReplaceRule) -> PmatchReplaceRule {
             .iter()
             .map(|m| MappingPair {
                 upper: strip_mapping_side(&m.upper),
+                arrow: m.arrow,
                 kind: match &m.kind {
                     MappingKind::Plain { lower } => MappingKind::Plain {
                         lower: strip_mapping_side(lower),
