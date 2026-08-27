@@ -576,3 +576,43 @@ fn span_on_inner_symbol_is_just_that_symbol() {
         panic!("expected concat, got {:?}", r.value);
     }
 }
+// ────────── `_xxx(` builtin functions (divvun/foma-rs#3) ──────────
+
+// `_` is not a NAME_CH, so without a dedicated rule the leading underscore
+// lexes as CenterMarker and the call cannot parse at all.
+#[test]
+fn builtin_function_keywords_parse_as_calls() {
+    for (src, name, argc) in [
+        ("_eq(a, %<, %>)", "_eq", 3),
+        ("_lm(a)", "_lm", 1),
+        ("_close(a|b)", "_close", 1),
+        ("_closeu(a|b)", "_closeu", 1),
+        ("_isunambiguous(a:b)", "_isunambiguous", 1),
+        ("_loweruniqeps(a)", "_loweruniqeps", 1),
+        ("_addnonfinalloop(a, b)", "_addnonfinalloop", 2),
+    ] {
+        match parsed(src) {
+            XreExpr::FunctionCall { name: n, args } => {
+                assert_eq!(n.as_str(), name, "{src}");
+                assert_eq!(args.len(), argc, "{src}");
+            }
+            other => panic!("{src}: expected FunctionCall, got {other:?}"),
+        }
+    }
+}
+
+// `_loweruniq(` must not be swallowed by the longer `_loweruniqeps(` alternative.
+#[test]
+fn builtin_prefix_names_stay_distinct() {
+    let XreExpr::FunctionCall { name, .. } = parsed("_loweruniq(a)") else {
+        panic!("expected FunctionCall");
+    };
+    assert_eq!(name.as_str(), "_loweruniq");
+}
+
+// The center marker still lexes as one everywhere it legitimately appears.
+#[test]
+fn center_marker_still_lexes_after_builtins() {
+    let r = parse("x -> y || a _ b").unwrap();
+    assert_eq!(nfst_xre::pretty_print(&r), "x -> y || a _ b");
+}

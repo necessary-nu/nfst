@@ -248,6 +248,15 @@ enum Raw {
         r"(?:%.|[^\x00-\x7f]|['`=1-9A-Za-z])(?:%.|[^\x00-\x7f]|[#'`=1-9A-Za-z]|0)*\(",
         function_name_owned
     )]
+    // Builtin function keywords (regex.l has one hardcoded rule per name).
+    // These start with `_`, which is deliberately not a NAME_CH, so they can
+    // never be reached by the generic FunctionName patterns above. Logos
+    // resolves overlaps by longest match, so `_eq(` wins over CenterMarker's
+    // `_+` without depending on declaration order.
+    #[regex(
+        r"_(?:S|isunambiguous|isidentity|isfunctional|notid|lm|loweruniqeps|loweruniq|allfinal|unambpart|ambpart|ambdom|eq|marktail|addfinalloop|addnonfinalloop|addloop|addsink|leftrewr|flatten|sublabel|closeu|close)\(",
+        function_name_owned
+    )]
     FunctionName(SmolStr),
 
     #[regex(r"0(?:%.|[^\x00-\x7f]|[#'`=1-9A-Za-z]|0)+", strip_percents_owned)]
