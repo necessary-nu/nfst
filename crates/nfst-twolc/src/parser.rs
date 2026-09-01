@@ -655,7 +655,7 @@ impl Parser {
         // Leading `:something` — implicit `?` on the upper side.
         if matches!(self.peek(), Some(Token::Colon)) {
             let upper = Self::spanned(TwolcRegex::Any, self.peek_span());
-            return self.parse_pair_tail(upper, start);
+            return self.parse_pair_tail(upper, start, None);
         }
         match self.peek().cloned() {
             Some(Token::LeftBracket) => {
@@ -688,12 +688,14 @@ impl Parser {
             Some(Token::Symbol(s)) => {
                 self.bump();
                 let upper = Self::spanned(TwolcRegex::Symbol(s), self.merge(start));
-                self.parse_pair_tail(upper, start)
+                let end = self.last_end;
+                self.parse_pair_tail(upper, start, Some(end))
             }
             Some(Token::QuestionMark) => {
                 self.bump();
                 let any = Self::spanned(TwolcRegex::Any, self.merge(start));
-                self.parse_pair_tail(any, start)
+                let end = self.last_end;
+                self.parse_pair_tail(any, start, Some(end))
             }
             other => {
                 let _ = stop_on_semi;
@@ -705,12 +707,26 @@ impl Parser {
         }
     }
 
+    /// Consume a `:lower` tail, turning `upper` into a pair.
+    ///
+    /// `upper_end` is the source offset the upper symbol ends at, or `None`
+    /// when there is no upper token (the leading-`:x` form). Whitespace is
+    /// significant here: `a:b` is one pair, but `a :b` is two atoms -- the
+    /// symbol `a`, then every declared pair whose lower side is `b`. Upstream
+    /// twolc distinguishes them, so the colon only binds when it starts exactly
+    /// where the upper symbol ended.
+    ///
+    /// Without this, lang-smn's `u:0 <=> u _ %> :v ;` read as the pair `%>:v`
+    /// and let a morpheme boundary surface as `v`, putting a spurious `v` into
+    /// generated forms across the language.
     fn parse_pair_tail(
         &mut self,
         upper: Spanned<TwolcRegex>,
         start: usize,
+        upper_end: Option<usize>,
     ) -> Result<Spanned<TwolcRegex>, Diagnostic> {
-        if matches!(self.peek(), Some(Token::Colon)) {
+        let adjacent = upper_end.is_none_or(|e| self.peek_span().range.start == e);
+        if adjacent && matches!(self.peek(), Some(Token::Colon)) {
             self.bump();
             // Upstream pre1 emits `: ?` when `:` is followed by a non-name
             // character (whitespace, `;`, `]`, etc.). The shorthand
@@ -794,6 +810,38 @@ mod tests {
         parse(src)
             .unwrap_or_else(|e| panic!("parse {src:?}: {e:?}"))
             .value
+    }
+
+    /// Whitespace binds a colon to the symbol before it. `a:b` is one pair;
+    /// `a :b` is the symbol `a` followed by a separate `:b`, which denotes
+    /// every declared pair whose lower side is `b`. Upstream twolc
+    /// distinguishes the two, and lang-smn depends on it: `%> :v` in
+    /// "Shortening u for vân illative" must not read as the pair `%>:v`, or a
+    /// morpheme boundary surfaces as `v`.
+    #[test]
+    fn a_spaced_colon_does_not_bind_to_the_previous_symbol() {
+        let joined = parsed("Alphabet a b v ;\nRules\n\"r\"\na:b <=> _ v:v ;");
+        let spaced = parsed("Alphabet a b v ;\nRules\n\"r\"\na:b <=> _ v :v ;");
+        let ctx = |f: &TwolcFile| {
+            format!("{:?}", f.rules[0].value.positive_contexts)
+        };
+        assert_ne!(
+            ctx(&joined),
+            ctx(&spaced),
+            "`v:v` and `v :v` must not parse to the same context"
+        );
+    }
+
+    /// The leading form has no symbol before the colon, so there is nothing for
+    /// it to bind to and it stays a pair with an open upper side.
+    #[test]
+    fn a_leading_colon_still_parses_as_a_pair() {
+        let f = parsed("Alphabet a b v ;\nRules\n\"r\"\na:b <=> _ :v ;");
+        assert_eq!(f.rules.len(), 1);
+        assert!(
+            format!("{:?}", f.rules[0].value.positive_contexts).contains("Pair"),
+            "`:v` must still form a pair"
+        );
     }
 
     #[test]
