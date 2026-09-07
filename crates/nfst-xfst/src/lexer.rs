@@ -409,6 +409,10 @@ impl<'a> Lexer<'a> {
         let mut in_quote: Option<u8> = None;
         while self.pos < self.src.len() {
             let b = self.src[self.pos];
+            // A token starts at the body's first character or after whitespace.
+            // Only there can `#` open a comment rather than continue a symbol.
+            let token_start = self.pos == start
+                || matches!(self.src[self.pos - 1], b' ' | b'\t' | b'\n' | b'\r');
             if let Some(q) = in_quote {
                 if b == b'%' && self.pos + 1 < self.src.len() {
                     self.pos += 2;
@@ -425,14 +429,13 @@ impl<'a> Lexer<'a> {
                 self.pos += 2;
                 continue;
             }
-            if b == b'!' {
-                // A `!` line comment runs to end of line, and a `;` inside one
-                // does not end the regex — upstream never sees it, because it
-                // hands the whole body to the regex parser, which skips
-                // comments. `#` opens a comment there too, but only in token
-                // position: `abc#def` is a single multichar symbol. Telling
-                // those apart needs a tokenizer, so `#` is left alone here —
-                // `!` can never be part of a symbol, escaped or not.
+            if b == b'!' || (b == b'#' && token_start) {
+                // A line comment runs to end of line, and a `;` inside one does
+                // not end the regex — upstream never sees it, because it hands
+                // the whole body to the regex parser, which skips comments.
+                // `#` only opens one in token position: `abc#def` is a single
+                // multichar symbol, so a `#` glued to the preceding character
+                // is part of that symbol. `!` can never be part of a symbol.
                 while self.pos < self.src.len() && self.src[self.pos] != b'\n' {
                     self.pos += 1;
                 }
@@ -443,12 +446,21 @@ impl<'a> Lexer<'a> {
                 self.pos += 1;
                 continue;
             }
-            if b == b'[' || b == b'(' || b == b'{' {
+            if b == b'{' {
+                // `{abc}` is a literal string, not a grouping: its contents are
+                // symbol text, so brackets and `;` inside it are data and must
+                // not move the depth or end the body. Reuse the quote skipper,
+                // which also honours `%` escapes, with `}` as the terminator.
+                in_quote = Some(b'}');
+                self.pos += 1;
+                continue;
+            }
+            if b == b'[' || b == b'(' {
                 depth += 1;
                 self.pos += 1;
                 continue;
             }
-            if b == b']' || b == b')' || b == b'}' {
+            if b == b']' || b == b')' {
                 depth -= 1;
                 self.pos += 1;
                 continue;
@@ -896,4 +908,58 @@ static KEYWORDS: &[(&str, CommandKind)] = {
 #[allow(non_snake_case)]
 const fn Determinise_alias() -> CommandKind {
     CommandKind::Determinize
+}
+
+#[cfg(test)]
+mod regex_body_tests {
+    use super::*;
+    use crate::token::Token;
+
+    /// Return the regex body the lexer captured for `src`, minus trailing
+    /// whitespace. The lexer keeps that deliberately, so a `% ` escaped space
+    /// at the end of a body survives; these tests are about where the body
+    /// ENDS, so the distinction is noise here.
+    fn body_of(src: &str) -> String {
+        let tokens = tokenize(src).expect("lexes");
+        tokens
+            .into_iter()
+            .find_map(|(t, _)| match t {
+                Token::RegexBody(b) => Some(b.trim_end().to_string()),
+                _ => None,
+            })
+            .expect("a regex body")
+    }
+
+    // A body that swallows its terminating `;` runs on to the end of the file,
+    // and every later command is then handed to the regex parser. That is how
+    // `save stack .generated/x.hfst` came back as "lex error: UnknownToken at
+    // `.`" pointing at the dots of a filename.
+
+    #[test]
+    fn a_brace_literal_containing_a_bracket_does_not_extend_the_body() {
+        assert_eq!(body_of("define Foo {a[b} c ;\n"), "{a[b} c");
+        assert_eq!(body_of("define Foo {a(b} c ;\n"), "{a(b} c");
+    }
+
+    #[test]
+    fn a_semicolon_inside_a_brace_literal_does_not_end_the_body() {
+        assert_eq!(body_of("define Foo {a;b} c ;\n"), "{a;b} c");
+    }
+
+    #[test]
+    fn a_hash_comment_in_token_position_runs_to_end_of_line() {
+        assert_eq!(body_of("define Foo a b # note (here\n c ;\n"), "a b # note (here\n c");
+    }
+
+    #[test]
+    fn a_hash_glued_to_a_symbol_is_not_a_comment() {
+        // `abc#def` is one multichar symbol, so the `(` here is real grouping
+        // and the `;` inside it must not end the body.
+        assert_eq!(body_of("define Foo abc#def ( a ; b ) ;\n"), "abc#def ( a ; b )");
+    }
+
+    #[test]
+    fn brackets_still_protect_a_semicolon() {
+        assert_eq!(body_of("define Foo [ a ; b ] ;\n"), "[ a ; b ]");
+    }
 }
