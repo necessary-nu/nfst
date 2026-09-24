@@ -193,14 +193,14 @@ impl Parser {
         let mut out = Vec::new();
         while !self.section_terminator_ahead() {
             let start = self.current_start();
-            let name = self.expect_symbol_string("set name")?;
+            let name = self.expect_spanned_symbol("set name")?;
             self.expect(&Token::Equals, "`=`")?;
             let mut members = Vec::new();
             while !matches!(self.peek(), Some(Token::Semicolon)) {
                 if self.section_terminator_ahead() {
                     break;
                 }
-                members.push(self.expect_symbol_string("set member")?);
+                members.push(self.expect_spanned_symbol("set member")?);
             }
             self.expect(&Token::Semicolon, "`;`")?;
             out.push(Spanned::new(
@@ -310,7 +310,7 @@ impl Parser {
         Ok(RuleCenter::Pair(pairs))
     }
 
-    fn parse_pair_list(&mut self) -> Result<Vec<CenterPair>, Diagnostic> {
+    fn parse_pair_list(&mut self) -> Result<Vec<Spanned<CenterPair>>, Diagnostic> {
         let mut pairs = Vec::new();
         pairs.push(self.parse_pair_only()?);
         while matches!(self.peek(), Some(Token::Union)) {
@@ -325,48 +325,60 @@ impl Parser {
     /// `X:X`, `X:` is `X:?`, `:Y` is `?:Y` and a lone `:` is `?:?`. Only
     /// `X:Y` writes both sides out. The bare form is why a rule centre can
     /// be a single symbol — `%{hyph%?%} <= _ ;`.
-    fn parse_pair_only(&mut self) -> Result<CenterPair, Diagnostic> {
+    fn parse_pair_only(&mut self) -> Result<Spanned<CenterPair>, Diagnostic> {
+        let start = self.current_start();
         // `:Y` and `:` — no upper side written, so the upper is the
         // wildcard. The lexer already supplies the `?` for a `:` that no
         // symbol follows, so the lower side reads as an ordinary side.
         if matches!(self.peek(), Some(Token::Colon)) {
-            self.bump();
-            let lower = self.expect_pair_side("pair lower")?;
-            return Ok(CenterPair {
-                upper: CenterSide::Any,
+            let colon = self.expect(&Token::Colon, "`:`")?;
+            let lower = self.expect_lower_side(&colon)?;
+            let pair = CenterPair {
+                upper: Spanned::new(CenterSide::Any, colon),
                 lower,
-            });
+            };
+            return Ok(Spanned::new(pair, self.merge(start)));
         }
         let upper = self.expect_pair_side("pair upper")?;
         if !matches!(self.peek(), Some(Token::Colon)) {
-            return Ok(CenterPair {
+            let pair = CenterPair {
                 lower: upper.clone(),
                 upper,
-            });
+            };
+            return Ok(Spanned::new(pair, self.merge(start)));
         }
-        self.bump();
-        let lower = self.expect_pair_side("pair lower")?;
-        Ok(CenterPair { upper, lower })
+        let colon = self.expect(&Token::Colon, "`:`")?;
+        let lower = self.expect_lower_side(&colon)?;
+        Ok(Spanned::new(CenterPair { upper, lower }, self.merge(start)))
+    }
+
+    /// The side after a colon. When nothing was written there, the lexer's
+    /// `?` has an empty span, so the side takes the colon's span instead.
+    fn expect_lower_side(&mut self, colon: &Span) -> Result<Spanned<CenterSide>, Diagnostic> {
+        let mut lower = self.expect_pair_side("pair lower")?;
+        if lower.span.is_empty() {
+            lower.span = colon.clone();
+        }
+        Ok(lower)
     }
 
     /// One side of a centre pair. `?` is the wildcard; an escaped `%?` has
     /// already been unescaped by the lexer into an ordinary `Symbol` whose
     /// text happens to be `?`, and stays a named symbol here.
-    fn expect_pair_side(&mut self, label: &str) -> Result<CenterSide, Diagnostic> {
-        match self.peek().cloned() {
-            Some(Token::Symbol(s)) => {
-                self.bump();
-                Ok(CenterSide::Symbol(s))
+    fn expect_pair_side(&mut self, label: &str) -> Result<Spanned<CenterSide>, Diagnostic> {
+        let side = match self.peek().cloned() {
+            Some(Token::Symbol(s)) => CenterSide::Symbol(s),
+            Some(Token::QuestionMark) => CenterSide::Any,
+            other => {
+                return Err(self.err(format!(
+                    "expected {label} symbol, got {}",
+                    describe(other.as_ref())
+                )));
             }
-            Some(Token::QuestionMark) => {
-                self.bump();
-                Ok(CenterSide::Any)
-            }
-            other => Err(self.err(format!(
-                "expected {label} symbol, got {}",
-                describe(other.as_ref())
-            ))),
-        }
+        };
+        let start = self.current_start();
+        self.bump();
+        Ok(Spanned::new(side, self.merge(start)))
     }
 
     fn parse_rule_operator(&mut self) -> Result<RuleOp, Diagnostic> {
@@ -446,13 +458,13 @@ impl Parser {
             }
             // Otherwise: `name in ( v1 v2 … )`, or the unparenthesised
             // `name in v` form.
-            let name = self.expect_symbol_string("variable name")?;
+            let name = self.expect_spanned_symbol("variable name")?;
             self.expect(&Token::In, "`in`")?;
             let values = if matches!(self.peek(), Some(Token::LeftParenthesis)) {
                 self.bump();
                 let mut values = Vec::new();
                 while !matches!(self.peek(), Some(Token::RightParenthesis)) {
-                    values.push(self.expect_symbol_string("variable value")?);
+                    values.push(self.expect_spanned_symbol("variable value")?);
                 }
                 self.expect(&Token::RightParenthesis, "`)`")?;
                 values
@@ -465,7 +477,7 @@ impl Parser {
                 // parenthesised list, and resolution stays downstream. Taking
                 // exactly one symbol is what keeps `in a b c` an error, as it
                 // is upstream.
-                vec![self.expect_symbol_string("variable value")?]
+                vec![self.expect_spanned_symbol("variable value")?]
             };
             assignments.push(VariableAssignment { name, values });
             // Block continues until `matched`/`mixed`/`freely` or `and`/EOL.
@@ -727,20 +739,25 @@ impl Parser {
     ) -> Result<Spanned<TwolcRegex>, Diagnostic> {
         let adjacent = upper_end.is_none_or(|e| self.peek_span().range.start == e);
         if adjacent && matches!(self.peek(), Some(Token::Colon)) {
-            self.bump();
+            let colon = self.expect(&Token::Colon, "`:`")?;
             // Upstream pre1 emits `: ?` when `:` is followed by a non-name
             // character (whitespace, `;`, `]`, etc.). The shorthand
-            // `name:` thus means `name:?` — pair with wildcard lower.
+            // `name:` thus means `name:?` — pair with wildcard lower. The
+            // lower side spans only its own token; an elided one (the lexer's
+            // `?` is empty) takes the colon's span.
+            let lower_start = self.current_start();
             let lower = match self.peek().cloned() {
                 Some(Token::Symbol(s)) => {
                     self.bump();
-                    Self::spanned(TwolcRegex::Symbol(s), self.merge(start))
+                    Self::spanned(TwolcRegex::Symbol(s), self.merge(lower_start))
                 }
                 Some(Token::QuestionMark) => {
                     self.bump();
-                    Self::spanned(TwolcRegex::Any, self.merge(start))
+                    let span = self.merge(lower_start);
+                    let span = if span.is_empty() { colon } else { span };
+                    Self::spanned(TwolcRegex::Any, span)
                 }
-                _ => Self::spanned(TwolcRegex::Any, self.merge(start)),
+                _ => Self::spanned(TwolcRegex::Any, colon),
             };
             return Ok(Self::spanned(
                 TwolcRegex::Pair {
@@ -774,6 +791,12 @@ impl Parser {
     }
 
     // ───────────────────────── helpers ─────────────────────────
+
+    fn expect_spanned_symbol(&mut self, label: &str) -> Result<Spanned<SmolStr>, Diagnostic> {
+        let start = self.current_start();
+        let s = self.expect_symbol_string(label)?;
+        Ok(Spanned::new(s, self.merge(start)))
+    }
 
     fn expect_symbol_string(&mut self, label: &str) -> Result<SmolStr, Diagnostic> {
         match self.peek().cloned() {
@@ -822,9 +845,7 @@ mod tests {
     fn a_spaced_colon_does_not_bind_to_the_previous_symbol() {
         let joined = parsed("Alphabet a b v ;\nRules\n\"r\"\na:b <=> _ v:v ;");
         let spaced = parsed("Alphabet a b v ;\nRules\n\"r\"\na:b <=> _ v :v ;");
-        let ctx = |f: &TwolcFile| {
-            format!("{:?}", f.rules[0].value.positive_contexts)
-        };
+        let ctx = |f: &TwolcFile| format!("{:?}", f.rules[0].value.positive_contexts);
         assert_ne!(
             ctx(&joined),
             ctx(&spaced),
@@ -870,23 +891,33 @@ mod tests {
         assert_eq!(f.rules[3].value.operator, RuleOp::NotLeft);
     }
 
-    fn center(f: &TwolcFile) -> &[CenterPair] {
+    fn center(f: &TwolcFile) -> Vec<CenterPair> {
         match &f.rules[0].value.center {
-            RuleCenter::Pair(pairs) => pairs,
+            RuleCenter::Pair(pairs) => pairs.iter().map(|p| p.value.clone()).collect(),
             other => panic!("expected a pair center, got {other:?}"),
         }
     }
 
     /// `"?"` spells the wildcard; anything else is a named symbol. Tests that
     /// need the literal `?` symbol build `CenterSide::Symbol` directly.
+    fn texts(items: &[Spanned<SmolStr>]) -> Vec<&str> {
+        items.iter().map(|s| s.value.as_str()).collect()
+    }
+
+    /// Spans take no part in `Spanned` equality, so an expected side can
+    /// carry any span.
+    fn side(s: CenterSide) -> Spanned<CenterSide> {
+        Spanned::new(s, Span::anonymous(0..0))
+    }
+
     fn pair(upper: &str, lower: &str) -> CenterPair {
-        let side = |s: &str| match s {
+        let named = |s: &str| match s {
             "?" => CenterSide::Any,
             other => CenterSide::Symbol(other.into()),
         };
         CenterPair {
-            upper: side(upper),
-            lower: side(lower),
+            upper: side(named(upper)),
+            lower: side(named(lower)),
         }
     }
 
@@ -926,8 +957,8 @@ mod tests {
         assert_eq!(
             center(&f),
             [CenterPair {
-                upper: CenterSide::Symbol("?".into()),
-                lower: CenterSide::Symbol("a".into()),
+                upper: side(CenterSide::Symbol("?".into())),
+                lower: side(CenterSide::Symbol("a".into())),
             }]
         );
 
@@ -935,8 +966,8 @@ mod tests {
         assert_eq!(
             center(&f),
             [CenterPair {
-                upper: CenterSide::Any,
-                lower: CenterSide::Symbol("a".into()),
+                upper: side(CenterSide::Any),
+                lower: side(CenterSide::Symbol("a".into())),
             }]
         );
     }
@@ -1010,8 +1041,8 @@ mod tests {
         assert_eq!(vars.len(), 1);
         assert_eq!(vars[0].matcher, VarMatcher::Matched);
         assert_eq!(vars[0].assignments.len(), 1);
-        assert_eq!(vars[0].assignments[0].name, "V");
-        assert_eq!(vars[0].assignments[0].values, ["Vowels"]);
+        assert_eq!(vars[0].assignments[0].name.value, "V");
+        assert_eq!(texts(&vars[0].assignments[0].values), ["Vowels"]);
     }
 
     #[test]
@@ -1022,8 +1053,8 @@ mod tests {
         );
         let vars = f.rules[0].value.variables.as_ref().unwrap();
         assert_eq!(vars.len(), 2);
-        assert_eq!(vars[0].assignments[0].values, ["Vowels"]);
-        assert_eq!(vars[1].assignments[0].values, ["b", "d"]);
+        assert_eq!(texts(&vars[0].assignments[0].values), ["Vowels"]);
+        assert_eq!(texts(&vars[1].assignments[0].values), ["b", "d"]);
     }
 
     #[test]
@@ -1049,8 +1080,8 @@ mod tests {
         let vars = f.rules[0].value.variables.as_ref().unwrap();
         assert_eq!(vars.len(), 1);
         assert_eq!(vars[0].assignments.len(), 2);
-        assert_eq!(vars[0].assignments[0].values, ["Vowels"]);
-        assert_eq!(vars[0].assignments[1].values, ["Cons"]);
+        assert_eq!(texts(&vars[0].assignments[0].values), ["Vowels"]);
+        assert_eq!(texts(&vars[0].assignments[1].values), ["Cons"]);
     }
 
     #[test]

@@ -65,10 +65,10 @@ pub fn pretty_print(file: &Spanned<TwolcFile>) -> SmolStr {
 }
 
 fn write_set(out: &mut SmolStrBuilder, s: &SetDefinition) {
-    let _ = write!(out, "  {} =", escape_symbol(&s.name));
+    let _ = write!(out, "  {} =", escape_symbol(&s.name.value));
     for m in &s.members {
         out.push(' ');
-        out.push_str(&escape_symbol(m));
+        out.push_str(&escape_symbol(&m.value));
     }
     out.push_str(" ;\n");
 }
@@ -120,7 +120,7 @@ fn write_rule(out: &mut SmolStrBuilder, r: &TwolcRule) {
 fn write_rule_center(out: &mut SmolStrBuilder, c: &RuleCenter) {
     match c {
         RuleCenter::Pair(pairs) if pairs.len() == 1 => {
-            write_center_pair(out, &pairs[0]);
+            write_center_pair(out, &pairs[0].value);
         }
         RuleCenter::Pair(pairs) => {
             out.push('[');
@@ -128,7 +128,7 @@ fn write_rule_center(out: &mut SmolStrBuilder, c: &RuleCenter) {
                 if i > 0 {
                     out.push_str(" | ");
                 }
-                write_center_pair(out, p);
+                write_center_pair(out, &p.value);
             }
             out.push(']');
         }
@@ -145,9 +145,9 @@ fn write_rule_center(out: &mut SmolStrBuilder, c: &RuleCenter) {
 /// tree. `escape_symbol` writes a literal `?` symbol as `%?`, so it stays
 /// distinct from the wildcard on the way back in.
 fn write_center_pair(out: &mut SmolStrBuilder, p: &CenterPair) {
-    write_center_side(out, &p.upper);
+    write_center_side(out, &p.upper.value);
     out.push(':');
-    write_center_side(out, &p.lower);
+    write_center_side(out, &p.lower.value);
 }
 
 fn write_center_side(out: &mut SmolStrBuilder, s: &CenterSide) {
@@ -185,10 +185,10 @@ fn write_variable_block(out: &mut SmolStrBuilder, b: &VariableBlock) {
 }
 
 fn write_variable_assignment(out: &mut SmolStrBuilder, a: &VariableAssignment) {
-    let _ = write!(out, "{} in (", escape_symbol(&a.name));
+    let _ = write!(out, "{} in (", escape_symbol(&a.name.value));
     for v in &a.values {
         out.push(' ');
-        out.push_str(&escape_symbol(v));
+        out.push_str(&escape_symbol(&v.value));
     }
     out.push_str(" )");
 }

@@ -83,8 +83,9 @@ fn omorfi_hyphens_uses_an_unparenthesised_set_name() {
     let vars = f.value.rules[0].value.variables.as_ref().unwrap();
     assert_eq!(vars.len(), 1);
     assert_eq!(vars[0].matcher, nfst_twolc::VarMatcher::Matched);
-    assert_eq!(vars[0].assignments[0].name, "VOWEL");
-    assert_eq!(vars[0].assignments[0].values, ["Vowels"]);
+    assert_eq!(vars[0].assignments[0].name.value, "VOWEL");
+    assert_eq!(vars[0].assignments[0].values[0].value, "Vowels");
+    assert_eq!(vars[0].assignments[0].values.len(), 1);
 }
 
 #[test]
@@ -99,13 +100,10 @@ fn omorfi_recase_uses_a_bare_symbol_rule_centre() {
     let nfst_twolc::RuleCenter::Pair(pairs) = &f.value.rules[0].value.center else {
         panic!("expected a pair centre");
     };
-    assert_eq!(
-        pairs,
-        &[nfst_twolc::CenterPair {
-            upper: nfst_twolc::CenterSide::Symbol("{hyph?}".into()),
-            lower: nfst_twolc::CenterSide::Symbol("{hyph?}".into()),
-        }]
-    );
+    assert_eq!(pairs.len(), 1);
+    let hyph = nfst_twolc::CenterSide::Symbol("{hyph?}".into());
+    assert_eq!(pairs[0].value.upper.value, hyph);
+    assert_eq!(pairs[0].value.lower.value, hyph);
 }
 
 #[test]

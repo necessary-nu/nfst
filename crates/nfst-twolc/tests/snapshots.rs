@@ -1,11 +1,18 @@
 //! Per-AST-variant snapshot tests.
 
+use nfst_syntax::Spanned;
 use nfst_twolc::{
-    AlphabetPair, BinaryOp, RuleCenter, RuleOp, TwolcFile, TwolcRegex, UnaryOp, VarMatcher, parse,
+    AlphabetPair, BinaryOp, CenterSide, RuleCenter, RuleOp, TwolcFile, TwolcRegex, UnaryOp,
+    VarMatcher, parse,
 };
+use smol_str::SmolStr;
 
 fn parsed(src: &str) -> TwolcFile {
     parse(src).unwrap_or_else(|e| panic!("parse: {e:?}")).value
+}
+
+fn texts(items: &[Spanned<SmolStr>]) -> Vec<&str> {
+    items.iter().map(|s| s.value.as_str()).collect()
 }
 
 #[test]
@@ -339,8 +346,8 @@ fn variable_assignment_records_values() {
     let f = parsed("Alphabet a b c d ;\nRules\n\"r\" V:Vy <=> _ ;\nwhere V in (a b c) matched ;");
     let blocks = f.rules[0].value.variables.as_ref().unwrap();
     let assn = &blocks[0].assignments[0];
-    assert_eq!(assn.name, "V");
-    assert_eq!(assn.values, vec!["a", "b", "c"]);
+    assert_eq!(assn.name.value, "V");
+    assert_eq!(texts(&assn.values), vec!["a", "b", "c"]);
 }
 
 #[test]
@@ -376,7 +383,10 @@ fn alphabet_with_many_pairs() {
 fn set_with_many_members() {
     let f = parsed("Alphabet a b c d e ;\nSets\nVowel = a e i o u ;\nRules\n\"r\" a:b <=> _ ;");
     assert_eq!(f.sets[0].value.members.len(), 5);
-    assert_eq!(f.sets[0].value.members, vec!["a", "e", "i", "o", "u"]);
+    assert_eq!(
+        texts(&f.sets[0].value.members),
+        vec!["a", "e", "i", "o", "u"]
+    );
 }
 
 #[test]
@@ -407,4 +417,60 @@ fn multiple_definitions() {
     assert_eq!(f.definitions.len(), 2);
     assert_eq!(f.definitions[0].value.name, "Foo");
     assert_eq!(f.definitions[1].value.name, "Bar");
+}
+
+fn source_of<'a, T>(src: &'a str, item: &Spanned<T>) -> &'a str {
+    &src[item.span.range.clone()]
+}
+
+#[test]
+fn centre_pair_and_its_sides_carry_their_spans() {
+    let src = "Alphabet a b:0 ;\nSets\nCns = b ;\nRules\n\"r\"\nCns:0 <=> a _ ;";
+    let f = parsed(src);
+    let RuleCenter::Pair(pairs) = &f.rules[0].value.center else {
+        panic!("expected a pair centre");
+    };
+    assert_eq!(source_of(src, &pairs[0]), "Cns:0");
+    assert_eq!(source_of(src, &pairs[0].value.upper), "Cns");
+    assert_eq!(source_of(src, &pairs[0].value.lower), "0");
+}
+
+#[test]
+fn elided_centre_side_takes_the_span_of_its_colon() {
+    let src = "Alphabet a:b ;\nRules\n\"r\"\na: <=> _ b ;";
+    let f = parsed(src);
+    let RuleCenter::Pair(pairs) = &f.rules[0].value.center else {
+        panic!("expected a pair centre");
+    };
+    assert_eq!(pairs[0].value.lower.value, CenterSide::Any);
+    assert_eq!(source_of(src, &pairs[0].value.lower), ":");
+}
+
+#[test]
+fn set_name_and_members_carry_their_spans() {
+    let src = "Alphabet a e ;\nSets\nVowel = a e ;\nRules\n\"r\" a:e <=> _ ;";
+    let f = parsed(src);
+    let set = &f.sets[0].value;
+    assert_eq!(source_of(src, &set.name), "Vowel");
+    assert_eq!(source_of(src, &set.members[1]), "e");
+}
+
+#[test]
+fn context_pair_sides_carry_only_their_own_spans() {
+    let src = "Alphabet a b:0 ;\nRules\n\"r\"\na <=> _ b:0 c: ;";
+    let f = parsed(src);
+    let TwolcRegex::Binary(_, first, second) = &f.rules[0].value.positive_contexts[0].right.value
+    else {
+        panic!("expected two concatenated atoms");
+    };
+    let TwolcRegex::Pair { upper, lower } = &first.value else {
+        panic!("expected a pair");
+    };
+    assert_eq!(source_of(src, first), "b:0");
+    assert_eq!(source_of(src, upper), "b");
+    assert_eq!(source_of(src, lower), "0");
+    let TwolcRegex::Pair { lower, .. } = &second.value else {
+        panic!("expected a pair");
+    };
+    assert_eq!(source_of(src, lower), ":");
 }

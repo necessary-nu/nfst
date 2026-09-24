@@ -26,10 +26,12 @@ pub struct AlphabetPair {
     pub lower: SmolStr,
 }
 
+/// A `Sets` entry. The name and each member carry their own span, so a
+/// consumer can point at the member it objects to rather than the whole line.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SetDefinition {
-    pub name: SmolStr,
-    pub members: Vec<SmolStr>,
+    pub name: Spanned<SmolStr>,
+    pub members: Vec<Spanned<SmolStr>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -51,7 +53,7 @@ pub struct TwolcRule {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuleCenter {
     /// `a:b` or `a:b | c:d` — flat list of alternatives.
-    Pair(Vec<CenterPair>),
+    Pair(Vec<Spanned<CenterPair>>),
     /// `:[ E ]:` — regex-form rule center.
     Regex(Box<Spanned<TwolcRegex>>),
 }
@@ -59,10 +61,14 @@ pub enum RuleCenter {
 /// One alternative of a pair-form rule centre. Unlike an [`AlphabetPair`],
 /// either side may be the `?` wildcard, so the sides cannot be plain strings —
 /// the wildcard `?` and the escaped literal `%?` would both read as `"?"`.
+///
+/// Each side keeps the span of the text that produced it. An elided side
+/// borrows a span from what is there: `a` gives both sides the span of `a`,
+/// and the missing side of `a:` or `:b` gets the span of its colon.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CenterPair {
-    pub upper: CenterSide,
-    pub lower: CenterSide,
+    pub upper: Spanned<CenterSide>,
+    pub lower: Spanned<CenterSide>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -101,8 +107,8 @@ pub struct VariableBlock {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct VariableAssignment {
-    pub name: SmolStr,
-    pub values: Vec<SmolStr>,
+    pub name: Spanned<SmolStr>,
+    pub values: Vec<Spanned<SmolStr>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
