@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "nfst-xfst"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "nfst-syntax",
  "nfst-xre",
