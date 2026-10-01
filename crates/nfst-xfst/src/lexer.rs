@@ -414,10 +414,9 @@ impl<'a> Lexer<'a> {
             let token_start = self.pos == start
                 || matches!(self.src[self.pos - 1], b' ' | b'\t' | b'\n' | b'\r');
             if let Some(q) = in_quote {
-                if b == b'%' && self.pos + 1 < self.src.len() {
-                    self.pos += 2;
-                    continue;
-                }
+                // The regex lexer ends a quoted or braced literal at the first
+                // closing delimiter and reads `%` inside it as itself, so
+                // `"%"` is the one-character string `%`, not an escaped quote.
                 if b == q {
                     in_quote = None;
                 }
@@ -449,8 +448,8 @@ impl<'a> Lexer<'a> {
             if b == b'{' {
                 // `{abc}` is a literal string, not a grouping: its contents are
                 // symbol text, so brackets and `;` inside it are data and must
-                // not move the depth or end the body. Reuse the quote skipper,
-                // which also honours `%` escapes, with `}` as the terminator.
+                // not move the depth or end the body. Reuse the quote skipper
+                // with `}` as the terminator.
                 in_quote = Some(b'}');
                 self.pos += 1;
                 continue;
@@ -961,5 +960,11 @@ mod regex_body_tests {
     #[test]
     fn brackets_still_protect_a_semicolon() {
         assert_eq!(body_of("define Foo [ a ; b ] ;\n"), "[ a ; b ]");
+    }
+
+    #[test]
+    fn a_percent_inside_a_quoted_literal_does_not_escape_the_closing_quote() {
+        assert_eq!(body_of("define A \"%\";\ndefine B b;\n"), "\"%\"");
+        assert_eq!(body_of("define A {%};\ndefine B b;\n"), "{%}");
     }
 }
