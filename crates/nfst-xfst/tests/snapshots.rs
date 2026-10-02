@@ -385,6 +385,16 @@ regex a ;
 }
 
 #[test]
+fn apply_med_takes_a_word_on_its_line() {
+    let cmds = parsed("apply med cst\nregex a ;\n");
+    assert_eq!(
+        cmds[0],
+        XfstCommand::Apply(ApplyKind::Med, Some("cst".into()))
+    );
+    assert_eq!(cmds.len(), 2);
+}
+
+#[test]
 fn read_text_from_a_redirect() {
     let cmds = parsed("read text < words.txt\nregex a ;\n");
     assert!(

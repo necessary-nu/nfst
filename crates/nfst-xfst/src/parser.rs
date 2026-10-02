@@ -177,7 +177,14 @@ impl Parser {
 
             CommandKind::ApplyUp => XfstCommand::Apply(ApplyKind::Up, self.eat_apply_body()),
             CommandKind::ApplyDown => XfstCommand::Apply(ApplyKind::Down, self.eat_apply_body()),
-            CommandKind::ApplyMed => XfstCommand::Apply(ApplyKind::Med, self.eat_apply_body()),
+            // The lexer keeps one kind for both forms of 'apply med': a word
+            // on the same line, or a body on the following lines.
+            CommandKind::ApplyMed => match self.peek() {
+                Some(Token::Name(_)) => {
+                    XfstCommand::Apply(ApplyKind::Med, Some(self.expect_name("apply input")?))
+                }
+                _ => XfstCommand::Apply(ApplyKind::Med, self.eat_apply_body()),
+            },
             CommandKind::ApplyUpSingle => {
                 XfstCommand::Apply(ApplyKind::Up, Some(self.expect_name("apply input")?))
             }
