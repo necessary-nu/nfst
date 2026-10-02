@@ -2,7 +2,7 @@
 
 use nfst_xfst::{
     ApplyKind, NetworkOp, PrintCmd, ReadCmd, RedirectKind, SaveCmd, SubstituteCmd, TestKind,
-    XfstCommand, parse, pretty_print,
+    TextSource, XfstCommand, parse, pretty_print,
 };
 
 fn parsed(src: &str) -> Vec<XfstCommand> {
@@ -363,11 +363,50 @@ fn read_att_records_path() {
 #[test]
 fn read_text_heredoc_form() {
     let cmds = parsed("read text\nfoo\nbar\n<ctrl-d>\n");
-    if let XfstCommand::Read(ReadCmd::Text(b)) = &cmds[0] {
+    if let XfstCommand::Read(ReadCmd::Text(TextSource::Inline(b))) = &cmds[0] {
         assert!(b.contains("foo"));
     } else {
-        panic!("expected Read Text");
+        panic!("expected inline Read Text");
     }
+}
+
+#[test]
+fn read_text_file_leaves_the_next_commands_alone() {
+    let cmds = parsed(
+        "read text words.txt
+regex a ;
+",
+    );
+    assert_eq!(
+        cmds[0],
+        XfstCommand::Read(ReadCmd::Text(TextSource::File("words.txt".into())))
+    );
+    assert!(matches!(cmds[1], XfstCommand::Regex(_)));
+}
+
+#[test]
+fn read_text_from_a_redirect() {
+    let cmds = parsed("read text < words.txt\nregex a ;\n");
+    assert!(
+        matches!(&cmds[0], XfstCommand::Redirected { redirect, .. } if redirect.path == "words.txt"),
+        "{:?}",
+        cmds[0]
+    );
+    assert_eq!(cmds.len(), 2);
+}
+
+#[test]
+fn read_spaced_text_file_leaves_the_next_commands_alone() {
+    let cmds = parsed(
+        "read spaced-text words.txt ;
+regex a ;
+",
+    );
+    assert_eq!(
+        cmds[0],
+        XfstCommand::Read(ReadCmd::Spaced(TextSource::File("words.txt".into())))
+    );
+    assert_eq!(cmds.len(), 2);
 }
 
 #[test]

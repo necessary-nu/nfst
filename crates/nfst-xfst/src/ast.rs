@@ -171,10 +171,19 @@ pub enum PrintCmd {
     Props,
 }
 
+/// Where `read text` and `read spaced-text` take their words from.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum TextSource {
+    /// A file named on the command's own line.
+    File(String),
+    /// The lines after the command, up to `<ctrl-d>` or the end of input.
+    Inline(String),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ReadCmd {
-    Text(String),
-    Spaced(String),
+    Text(TextSource),
+    Spaced(TextSource),
     Prolog(String),
     Props(String),
     Lexc(String),

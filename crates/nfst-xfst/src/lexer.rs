@@ -216,8 +216,26 @@ impl<'a> Lexer<'a> {
                     self.dispatch_apply(kind, start);
                 }
                 CommandKind::ReadText | CommandKind::ReadSpaced => {
+                    // A file name on the same line reads that file; with
+                    // nothing after the command, the following lines are
+                    // the words.
                     self.push(Token::Command(kind), start);
-                    self.read_heredoc_body();
+                    self.skip_horizontal_ws();
+                    // '< FILE' is a redirect, lexed by the main loop.
+                    if self.pos < self.src.len() && self.src[self.pos] == b'<' {
+                        return;
+                    }
+                    let line = self.read_to_end_of_line();
+                    let line = line.trim_end_matches([';', ' ', '\t']).trim_end();
+                    if line.is_empty() {
+                        self.read_heredoc_body();
+                    } else {
+                        let lstart = self.pos - self.pos.min(line.len());
+                        self.tokens.push((
+                            Token::Name(line.to_string()),
+                            Span::anonymous(lstart..self.pos),
+                        ));
+                    }
                 }
                 CommandKind::Echo
                 | CommandKind::System
@@ -411,8 +429,8 @@ impl<'a> Lexer<'a> {
             let b = self.src[self.pos];
             // A token starts at the body's first character or after whitespace.
             // Only there can `#` open a comment rather than continue a symbol.
-            let token_start = self.pos == start
-                || matches!(self.src[self.pos - 1], b' ' | b'\t' | b'\n' | b'\r');
+            let token_start =
+                self.pos == start || matches!(self.src[self.pos - 1], b' ' | b'\t' | b'\n' | b'\r');
             if let Some(q) = in_quote {
                 // The regex lexer ends a quoted or braced literal at the first
                 // closing delimiter and reads `%` inside it as itself, so
@@ -947,14 +965,20 @@ mod regex_body_tests {
 
     #[test]
     fn a_hash_comment_in_token_position_runs_to_end_of_line() {
-        assert_eq!(body_of("define Foo a b # note (here\n c ;\n"), "a b # note (here\n c");
+        assert_eq!(
+            body_of("define Foo a b # note (here\n c ;\n"),
+            "a b # note (here\n c"
+        );
     }
 
     #[test]
     fn a_hash_glued_to_a_symbol_is_not_a_comment() {
         // `abc#def` is one multichar symbol, so the `(` here is real grouping
         // and the `;` inside it must not end the body.
-        assert_eq!(body_of("define Foo abc#def ( a ; b ) ;\n"), "abc#def ( a ; b )");
+        assert_eq!(
+            body_of("define Foo abc#def ( a ; b ) ;\n"),
+            "abc#def ( a ; b )"
+        );
     }
 
     #[test]

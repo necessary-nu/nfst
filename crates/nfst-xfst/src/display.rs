@@ -4,7 +4,7 @@
 
 use crate::ast::{
     ApplyKind, NetworkOp, PrintCmd, ReadCmd, Redirect, RedirectKind, SaveCmd, SubstituteCmd,
-    TestKind, XfstCommand, XfstScript,
+    TestKind, TextSource, XfstCommand, XfstScript,
 };
 use nfst_syntax::Spanned;
 use std::fmt::Write;
@@ -167,18 +167,24 @@ fn write_command(out: &mut String, c: &XfstCommand) {
     }
 }
 
+fn write_text_source(out: &mut String, command: &str, source: &TextSource) {
+    match source {
+        TextSource::File(p) => {
+            let _ = write!(out, "{} {}", command, escape_name(p));
+        }
+        TextSource::Inline(b) => {
+            out.push_str(command);
+            out.push('\n');
+            out.push_str(b);
+            out.push_str("<ctrl-d>");
+        }
+    }
+}
+
 fn write_read(out: &mut String, c: &ReadCmd) {
     match c {
-        ReadCmd::Text(b) => {
-            out.push_str("read text\n");
-            out.push_str(b);
-            out.push_str("<ctrl-d>");
-        }
-        ReadCmd::Spaced(b) => {
-            out.push_str("read spaced-text\n");
-            out.push_str(b);
-            out.push_str("<ctrl-d>");
-        }
+        ReadCmd::Text(source) => write_text_source(out, "read text", source),
+        ReadCmd::Spaced(source) => write_text_source(out, "read spaced-text", source),
         ReadCmd::Prolog(p) => {
             let _ = write!(out, "read prolog {} ;", escape_name(p));
         }

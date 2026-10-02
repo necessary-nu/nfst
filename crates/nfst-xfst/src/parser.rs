@@ -4,7 +4,7 @@
 
 use crate::ast::{
     ApplyKind, NetworkOp, PrintCmd, ReadCmd, Redirect, RedirectKind, SaveCmd, SubstituteCmd,
-    TestKind, XfstCommand, XfstScript,
+    TestKind, TextSource, XfstCommand, XfstScript,
 };
 use crate::lexer::{LexError, tokenize};
 use crate::token::{CommandKind, Token};
@@ -616,21 +616,21 @@ impl Parser {
         None
     }
 
-    fn eat_heredoc_or_path(&mut self) -> String {
+    fn eat_heredoc_or_path(&mut self) -> TextSource {
         match self.peek() {
             Some(Token::HeredocBody(_)) => {
                 if let Some((Token::HeredocBody(s), _)) = self.bump() {
-                    return s;
+                    return TextSource::Inline(s);
                 }
             }
             Some(Token::Name(_)) => {
                 if let Some((Token::Name(s), _)) = self.bump() {
-                    return s;
+                    return TextSource::File(s);
                 }
             }
             _ => {}
         }
-        String::new()
+        TextSource::Inline(String::new())
     }
 
     fn eat_optional_u32(&mut self) -> Option<u32> {
