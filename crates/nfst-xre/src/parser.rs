@@ -59,6 +59,15 @@ pub fn parse_all(source: &str) -> Result<Vec<SpannedXre>, ParseError> {
 }
 
 fn lex_error_to_diag(e: LexError) -> Diagnostic {
+    if e.kind == crate::lexer::LexErrorKind::BadEscape {
+        return Diagnostic::error(
+            e.span,
+            format!(
+                "malformed escape in {}: \\u takes 4 hex digits, \\x 2 hex digits, an octal escape 3 digits, and none may name zero",
+                e.slice
+            ),
+        );
+    }
     Diagnostic::error(e.span, format!("lex error: {:?} at {:?}", e.kind, e.slice))
 }
 

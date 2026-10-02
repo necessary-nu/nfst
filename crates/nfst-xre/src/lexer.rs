@@ -19,6 +19,8 @@ pub enum LexErrorKind {
     UnknownToken,
     BadWeight,
     BadInteger,
+    /// A backslash escape in a quoted literal that names no character.
+    BadEscape,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -294,9 +296,60 @@ fn weight(lex: &mut logos::Lexer<Raw>) -> Result<f64, LexErrorKind> {
         .ok_or(LexErrorKind::BadWeight)
 }
 
-fn quoted_literal(lex: &mut logos::Lexer<Raw>) -> SmolStr {
+fn quoted_literal(lex: &mut logos::Lexer<Raw>) -> Result<SmolStr, LexErrorKind> {
     let s = lex.slice();
-    s.trim_matches('"').into()
+    unescape_quoted(s.trim_matches('"')).ok_or(LexErrorKind::BadEscape)
+}
+
+/// Decode the backslash escapes of a quoted literal's body: the C escapes
+/// `\a \b \f \n \r \t \v`, `\uXXXX` (four hex digits), `\xHH` (two hex
+/// digits) and `\NNN` (three octal digits); any other `\X` is `X`. `None`
+/// for an escape that is cut short, has the wrong number of digits, or names
+/// zero or a surrogate.
+fn unescape_quoted(body: &str) -> Option<SmolStr> {
+    if !body.contains('\\') {
+        return Some(body.into());
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        let e = chars.next()?;
+        let decoded = match e {
+            'a' => '\u{7}',
+            'b' => '\u{8}',
+            'f' => '\u{c}',
+            'n' => '\n',
+            'r' => '\r',
+            't' => '\t',
+            'v' => '\u{b}',
+            'u' => numeric_escape(&mut chars, None, 4, 16)?,
+            'x' => numeric_escape(&mut chars, None, 2, 16)?,
+            '0'..='7' => numeric_escape(&mut chars, Some(e), 3, 8)?,
+            other => other,
+        };
+        out.push(decoded);
+    }
+    Some(out.into())
+}
+
+/// Read a numeric escape of exactly `digits` digits in `radix`, the first of
+/// which may already have been consumed.
+fn numeric_escape(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    first: Option<char>,
+    digits: usize,
+    radix: u32,
+) -> Option<char> {
+    let mut text: String = first.into_iter().collect();
+    while text.len() < digits {
+        text.push(chars.next().filter(|c| c.is_digit(radix))?);
+    }
+    let value = u32::from_str_radix(&text, radix).ok()?;
+    char::from_u32(value).filter(|&c| c != '\0')
 }
 
 fn curly_body(lex: &mut logos::Lexer<Raw>) -> SmolStr {
@@ -611,6 +664,33 @@ mod tests {
     fn percent_escapes_are_stripped() {
         // %+N escapes the +; the resulting symbol is "+N"
         assert_eq!(lex("%+N"), vec![Token::MultiCharSymbol("+N".into())]);
+    }
+
+    #[test]
+    fn quoted_literal_decodes_escapes() {
+        assert_eq!(lex(r#""a\tb""#), vec![Token::QuotedLiteral("a\tb".into())]);
+        assert_eq!(lex(r#""\x41""#), vec![Token::QuotedLiteral("A".into())]);
+        assert_eq!(lex(r#""\101""#), vec![Token::QuotedLiteral("A".into())]);
+        assert_eq!(
+            lex(r#""\u00e9""#),
+            vec![Token::QuotedLiteral("\u{e9}".into())]
+        );
+        assert_eq!(lex(r#""\\""#), vec![Token::QuotedLiteral("\\".into())]);
+        assert_eq!(lex(r#""\%""#), vec![Token::QuotedLiteral("%".into())]);
+    }
+
+    #[test]
+    fn malformed_escapes_fail() {
+        for bad in [
+            r#""\x4""#,
+            r#""\u12""#,
+            r#""\x00""#,
+            r#""\ud800""#,
+            r#""a\""#,
+            r#""\18""#,
+        ] {
+            assert!(tokenize(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

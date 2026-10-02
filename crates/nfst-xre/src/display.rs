@@ -569,6 +569,11 @@ mod tests {
     }
 
     #[test]
+    fn decoded_escapes_round_trip() {
+        round_trip(r#""\\" "a\tb" "\u00e9" ;"#);
+    }
+
+    #[test]
     fn rt_atoms() {
         round_trip("a");
         round_trip("0");
