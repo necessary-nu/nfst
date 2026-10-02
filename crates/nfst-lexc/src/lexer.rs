@@ -383,12 +383,32 @@ impl<'a> Lexer<'a> {
     fn lex_identifier(&mut self) -> Option<(SmolStr, Span)> {
         let start = self.pos;
         let mut out = SmolStrBuilder::new();
+        // From an `@` to the next `@` nothing is unescaped, as in upstream
+        // `strip_percents`: a `%X` there stays `%X`, so a symbol such as
+        // `@%:x` keeps its percent. The escape still keeps a special X from
+        // ending the token.
+        let mut in_at = false;
         loop {
             let bytes = self.source.as_bytes();
             if self.pos >= bytes.len() {
                 break;
             }
             let b = bytes[self.pos];
+            if in_at && b == b'%' {
+                out.push('%');
+                self.pos += 1;
+                if let Some(c) = self.rest().chars().next() {
+                    out.push(c);
+                    self.pos += c.len_utf8();
+                }
+                continue;
+            }
+            if b == b'@' {
+                in_at = !in_at;
+                out.push('@');
+                self.pos += 1;
+                continue;
+            }
             // Escape: `%X` consumes two characters; the X is kept. This mirrors
             // upstream `hfst::lexc::strip_percents(s, do_zeros=false)`: every
             // escape is unescaped to its literal, EXCEPT `%0`, which becomes the
@@ -664,6 +684,19 @@ dog Num "tag" ;"#);
         // `%+N` strips to `+N`.
         let toks = lex("LEXICON Root\n%+N # ;");
         assert_eq!(toks[1], Token::Identifier("+N".into()));
+    }
+
+    #[test]
+    fn escapes_stay_literal_inside_at_runs() {
+        // Upstream strip_percents copies everything from an `@` to the next
+        // `@` as written: `@%:x` keeps its `%`, while `%+` outside a run is
+        // unescaped as usual.
+        let toks = lex("LEXICON Root\n@%:x # ;");
+        assert_eq!(toks[1], Token::Identifier("@%:x".into()));
+        let toks = lex("LEXICON Root\n%<@%:~x& # ;");
+        assert_eq!(toks[1], Token::Identifier("<@%:~x&".into()));
+        let toks = lex("LEXICON Root\n@U.F.%0@%+ # ;");
+        assert_eq!(toks[1], Token::Identifier("@U.F.%0@+".into()));
     }
 
     #[test]

@@ -116,8 +116,13 @@ fn write_spec(out: &mut SmolStrBuilder, spec: &EntrySpec) {
 /// escape prefix. To round-trip safely, we prefix any of those with `%`.
 fn escape_identifier(s: &str) -> SmolStr {
     let mut out = SmolStrBuilder::new();
+    // Between an `@` and the next one the lexer unescapes nothing, so the
+    // text there is already in its written form.
+    let mut in_at = false;
     for c in s.chars() {
-        if needs_escape(c) {
+        if c == '@' {
+            in_at = !in_at;
+        } else if !in_at && needs_escape(c) {
             out.push('%');
         }
         out.push(c);
